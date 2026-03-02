@@ -1,10 +1,21 @@
+﻿import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, Package, AlertTriangle, BarChart3, Shield, Ban, CheckCircle, Eye } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import {
+  Users, Package, AlertTriangle, BarChart3, Shield, Ban, CheckCircle, Eye,
+  Plus, Pencil, Trash2, Leaf,
+} from "lucide-react";
 import { toast } from "sonner";
+import { wasteTypeService, WasteType, WASTE_CATEGORIES } from "@/services/wasteType";
 
 const mockUsers = [
   { id: "1", name: "Nguyễn Văn An", email: "citizen@test.com", role: "citizen", status: "active", reports: 12 },
@@ -27,7 +38,163 @@ const roleLabels: Record<string, string> = {
   admin: "Quản trị",
 };
 
+// ─── WasteType Form Dialog ────────────────────────────────────────────────────
+interface WasteTypeFormProps {
+  open: boolean;
+  editing: WasteType | null;
+  onClose: () => void;
+}
+
+const WasteTypeFormDialog = ({ open, editing, onClose }: WasteTypeFormProps) => {
+  const qc = useQueryClient();
+  const isEdit = !!editing;
+
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState<string>("0");
+  const [isActive, setIsActive] = useState(true);
+
+  // Sync form fields mỗi khi dialog mở hoặc editing thay đổi
+  useEffect(() => {
+    if (open) {
+      setName(editing?.name ?? "");
+      setDescription(editing?.description ?? "");
+      setCategory(String(editing?.category ?? "0"));
+      setIsActive(editing?.isActive ?? true);
+    }
+  }, [open, editing]);
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      wasteTypeService.create({ name, description, category: Number(category) }),
+    onSuccess: () => {
+      toast.success("Đã thêm loại rác thành công");
+      qc.invalidateQueries({ queryKey: ["wasteTypes"] });
+      onClose();
+    },
+    onError: () => toast.error("Thêm loại rác thất bại"),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: () =>
+      wasteTypeService.update(editing!.id, {
+        name,
+        description,
+        category: Number(category),
+        isActive,
+      }),
+    onSuccess: () => {
+      toast.success("Đã cập nhật loại rác thành công");
+      qc.invalidateQueries({ queryKey: ["wasteTypes"] });
+      onClose();
+    },
+    onError: () => toast.error("Cập nhật loại rác thất bại"),
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) { toast.error("Vui lòng nhập tên loại rác"); return; }
+    if (isEdit) updateMutation.mutate();
+    else createMutation.mutate();
+  };
+
+  const isPending = createMutation.isPending || updateMutation.isPending;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display">
+            {isEdit ? "Chỉnh sửa loại rác" : "Thêm loại rác mới"}
+          </DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 py-2">
+          <div className="space-y-1">
+            <Label>Tên loại rác *</Label>
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder="VD: Chai nhựa PET" />
+          </div>
+          <div className="space-y-1">
+            <Label>Mô tả</Label>
+            <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Mô tả ngắn về loại rác" />
+          </div>
+          <div className="space-y-1">
+            <Label>Danh mục</Label>
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Object.entries(WASTE_CATEGORIES).map(([val, label]) => (
+                  <SelectItem key={val} value={val}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {isEdit && (
+            <div className="space-y-1">
+              <Label>Trạng thái</Label>
+              <Select value={isActive ? "true" : "false"} onValueChange={v => setIsActive(v === "true")}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="true">Đang hoạt động</SelectItem>
+                  <SelectItem value="false">Ngừng hoạt động</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Đang lưu..." : isEdit ? "Lưu thay đổi" : "Thêm mới"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+// ─── Main Dashboard ───────────────────────────────────────────────────────────
 const AdminDashboard = () => {
+  const qc = useQueryClient();
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingWasteType, setEditingWasteType] = useState<WasteType | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<WasteType | null>(null);
+  const [filterKeyword, setFilterKeyword] = useState("");
+  const [filterCategory, setFilterCategory] = useState<string>("all");
+
+  const { data: wasteTypes = [], isLoading: wtLoading } = useQuery({
+    queryKey: ["wasteTypes"],
+    queryFn: () => wasteTypeService.getAll(),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => wasteTypeService.delete(id),
+    onSuccess: () => {
+      toast.success("Đã xóa loại rác");
+      qc.invalidateQueries({ queryKey: ["wasteTypes"] });
+    },
+    onError: () => toast.error("Xóa loại rác thất bại"),
+  });
+
+  const handleEdit = (wt: WasteType) => {
+    setEditingWasteType(wt);
+    setFormOpen(true);
+  };
+
+  const handleAddNew = () => {
+    setEditingWasteType(null);
+    setFormOpen(true);
+  };
+
+  const handleDelete = (wt: WasteType) => {
+    setDeleteTarget(wt);
+  };
+
+  const filteredWasteTypes = wasteTypes.filter(wt => {
+    const matchKeyword = filterKeyword === "" || wt.name.toLowerCase().includes(filterKeyword.toLowerCase());
+    const matchCat = filterCategory === "all" || String(wt.category) === filterCategory;
+    return matchKeyword && matchCat;
+  });
+
   return (
     <DashboardLayout>
       <div className="mb-6">
@@ -60,10 +227,12 @@ const AdminDashboard = () => {
       <Tabs defaultValue="users">
         <TabsList>
           <TabsTrigger value="users">Quản lý người dùng</TabsTrigger>
+          <TabsTrigger value="wastetype">Loại rác</TabsTrigger>
           <TabsTrigger value="complaints">Khiếu nại</TabsTrigger>
           <TabsTrigger value="overview">Tổng quan</TabsTrigger>
         </TabsList>
 
+        {/* ── Users Tab ─────────────────────────────────────── */}
         <TabsContent value="users">
           <Card className="shadow-card">
             <CardHeader>
@@ -104,6 +273,86 @@ const AdminDashboard = () => {
           </Card>
         </TabsContent>
 
+        {/* ── WasteType Tab ──────────────────────────────────── */}
+        <TabsContent value="wastetype">
+          <Card className="shadow-card">
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <CardTitle className="flex items-center gap-2 font-display text-base">
+                  <Leaf className="h-5 w-5 text-primary" /> Quản lý loại rác
+                </CardTitle>
+                <Button size="sm" onClick={handleAddNew}>
+                  <Plus className="mr-1 h-4 w-4" /> Thêm loại rác
+                </Button>
+              </div>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <Input
+                  placeholder="Tìm theo tên..."
+                  value={filterKeyword}
+                  onChange={e => setFilterKeyword(e.target.value)}
+                  className="sm:max-w-xs"
+                />
+                <Select value={filterCategory} onValueChange={setFilterCategory}>
+                  <SelectTrigger className="sm:max-w-[160px]">
+                    <SelectValue placeholder="Danh mục" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tất cả danh mục</SelectItem>
+                    {Object.entries(WASTE_CATEGORIES).map(([val, label]) => (
+                      <SelectItem key={val} value={val}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {wtLoading ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">Đang tải...</p>
+              ) : filteredWasteTypes.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">Không có loại rác nào</p>
+              ) : (
+                <div className="space-y-2">
+                  {filteredWasteTypes.map(wt => (
+                    <div
+                      key={wt.id}
+                      className="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-medium text-foreground">{wt.name}</span>
+                          {wt.category !== undefined && (
+                            <Badge variant="outline">{WASTE_CATEGORIES[wt.category] ?? "Khác"}</Badge>
+                          )}
+                          <Badge variant={wt.isActive !== false ? "default" : "secondary"}>
+                            {wt.isActive !== false ? "Hoạt động" : "Ngừng"}
+                          </Badge>
+                        </div>
+                        {wt.description && (
+                          <p className="mt-0.5 text-xs text-muted-foreground">{wt.description}</p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 gap-2">
+                        <Button size="sm" variant="outline" onClick={() => handleEdit(wt)}>
+                          <Pencil className="mr-1 h-3 w-3" /> Sửa
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleDelete(wt)}
+                          disabled={deleteMutation.isPending}
+                        >
+                          <Trash2 className="mr-1 h-3 w-3" /> Xóa
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Complaints Tab ─────────────────────────────────── */}
         <TabsContent value="complaints">
           <div className="space-y-3">
             {mockComplaints.map(c => (
@@ -134,10 +383,15 @@ const AdminDashboard = () => {
           </div>
         </TabsContent>
 
+        {/* ── Overview Tab ───────────────────────────────────── */}
         <TabsContent value="overview">
           <div className="grid gap-4 sm:grid-cols-2">
             <Card className="shadow-card">
-              <CardHeader><CardTitle className="flex items-center gap-2 font-display text-base"><BarChart3 className="h-5 w-5 text-primary" /> Theo khu vực</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 font-display text-base">
+                  <BarChart3 className="h-5 w-5 text-primary" /> Theo khu vực
+                </CardTitle>
+              </CardHeader>
               <CardContent>
                 {[
                   { area: "Quận 1", requests: 156, pct: 100 },
@@ -159,7 +413,11 @@ const AdminDashboard = () => {
               </CardContent>
             </Card>
             <Card className="shadow-card">
-              <CardHeader><CardTitle className="flex items-center gap-2 font-display text-base"><Users className="h-5 w-5 text-primary" /> Phân bố người dùng</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 font-display text-base">
+                  <Users className="h-5 w-5 text-primary" /> Phân bố người dùng
+                </CardTitle>
+              </CardHeader>
               <CardContent className="space-y-4">
                 {[
                   { role: "Công dân", count: 1089, icon: "👤" },
@@ -177,6 +435,38 @@ const AdminDashboard = () => {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* WasteType Form Dialog */}
+      <WasteTypeFormDialog
+        open={formOpen}
+        editing={editingWasteType}
+        onClose={() => setFormOpen(false)}
+      />
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xác nhận xóa</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bạn có chắc muốn xóa loại rác <span className="font-semibold">"{deleteTarget?.name}"</span> không?
+              Hành động này không thể hoàn tác.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
+                setDeleteTarget(null);
+              }}
+            >
+              Xóa
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 };

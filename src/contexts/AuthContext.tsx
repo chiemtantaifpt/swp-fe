@@ -1,6 +1,9 @@
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { authService } from "@/services/auth";
+import type { EnterpriseInfo } from "@/services/auth";
+import queryClient from "@/lib/queryClient";
 
-export type UserRole = "citizen" | "enterprise" | "collector" | "admin";
+export type UserRole = "Citizen" | "Enterprise" | "Collector" | "Admin";
 
 export interface User {
   id: string;
@@ -15,51 +18,85 @@ export interface User {
 interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
-  register: (name: string, email: string, password: string, role: UserRole) => Promise<boolean>;
-  logout: () => void;
+  register: (fullName: string, phone: string, email: string, password: string, role: UserRole, enterpriseInfo?: EnterpriseInfo) => Promise<boolean>;
+  logout: () => Promise<void>;
   isAuthenticated: boolean;
+  loading: boolean;
 }
-
-const MOCK_USERS: (User & { password: string })[] = [
-  { id: "1", email: "citizen@test.com", password: "123456", name: "Nguyễn Văn An", role: "citizen", district: "Quận 1", points: 320 },
-  { id: "2", email: "enterprise@test.com", password: "123456", name: "Công ty Tái chế Xanh", role: "enterprise", district: "Quận 1" },
-  { id: "3", email: "collector@test.com", password: "123456", name: "Trần Minh Tuấn", role: "collector", district: "Quận 1" },
-  { id: "4", email: "admin@test.com", password: "123456", name: "Admin Hệ Thống", role: "admin" },
-];
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem("eco_user");
-    return saved ? JSON.parse(saved) : null;
+    if (!saved || saved === "undefined" || saved === "null") {
+      localStorage.removeItem("eco_user");
+      return null;
+    }
+    try {
+      return JSON.parse(saved);
+    } catch {
+      localStorage.removeItem("eco_user");
+      return null;
+    }
   });
+  const [loading, setLoading] = useState(false);
+
+  // Luôn re-decode từ token khi load để đảm bảo role luôn mới nhất từ JWT
+  useEffect(() => {
+    const token = localStorage.getItem("eco_token");
+    if (token) {
+      try {
+        const userData = authService.getUserAfterLogin(token);
+        setUser(userData);
+        localStorage.setItem("eco_user", JSON.stringify(userData));
+      } catch {
+        localStorage.removeItem("eco_token");
+        localStorage.removeItem("eco_refresh_token");
+        localStorage.removeItem("eco_user");
+        setUser(null);
+      }
+    }
+  }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    const found = MOCK_USERS.find(u => u.email === email && u.password === password);
-    if (found) {
-      const { password: _, ...userData } = found;
-      setUser(userData);
+    setLoading(true);
+    try {
+      const tokenResponse = await authService.login(email, password);
+      if (!tokenResponse?.accessToken) {
+        throw new Error("Đăng nhập thất bại: không nhận được token từ server");
+      }
+      localStorage.setItem("eco_token", tokenResponse.accessToken);
+      localStorage.setItem("eco_refresh_token", tokenResponse.refreshToken ?? "");
+      const userData = authService.getUserAfterLogin(tokenResponse.accessToken);
       localStorage.setItem("eco_user", JSON.stringify(userData));
+      setUser(userData);
       return true;
+    } finally {
+      setLoading(false);
     }
-    return false;
   }, []);
 
-  const register = useCallback(async (name: string, email: string, _password: string, role: UserRole) => {
-    const newUser: User = { id: Date.now().toString(), email, name, role, district: "Quận 1", points: 0 };
-    setUser(newUser);
-    localStorage.setItem("eco_user", JSON.stringify(newUser));
-    return true;
+  const register = useCallback(async (fullName: string, phone: string, email: string, password: string, role: UserRole, enterpriseInfo?: EnterpriseInfo) => {
+    setLoading(true);
+    try {
+      await authService.register(fullName, phone, email, password, role, enterpriseInfo);
+      return true;
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     setUser(null);
+    localStorage.removeItem("eco_token");
+    localStorage.removeItem("eco_refresh_token");
     localStorage.removeItem("eco_user");
+    queryClient.clear();
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ user, login, register, logout, isAuthenticated: !!user, loading }}>
       {children}
     </AuthContext.Provider>
   );

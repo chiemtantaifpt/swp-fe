@@ -17,15 +17,30 @@ const Login = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!email || !password) {
+      toast.error("Vui lòng nhập đầy đủ email và mật khẩu");
+      return;
+    }
+
+    const roleToPath: Record<string, string> = {
+      "Citizen": "/citizen",
+      "Enterprise": "/enterprise",
+      "Collector": "/collector",
+      "Admin": "/admin",
+    };
+
     setLoading(true);
-    const ok = await login(email, password);
-    setLoading(false);
-    if (ok) {
+    try {
+      await login(email, password);
       const saved = JSON.parse(localStorage.getItem("eco_user") || "{}");
       toast.success("Đăng nhập thành công!");
-      navigate(`/${saved.role}`);
-    } else {
-      toast.error("Email hoặc mật khẩu không đúng");
+      navigate(roleToPath[saved.role] || "/");
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Email hoặc mật khẩu không đúng";
+      toast.error(msg);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -41,19 +56,6 @@ const Login = () => {
           <p className="text-muted-foreground">
             Nền tảng kết nối người dân, doanh nghiệp tái chế và dịch vụ thu gom rác theo khu vực.
           </p>
-          <div className="mt-8 space-y-3 text-left">
-            {[
-              { role: "Công dân", email: "citizen@test.com" },
-              { role: "Doanh nghiệp", email: "enterprise@test.com" },
-              { role: "Thu gom", email: "collector@test.com" },
-              { role: "Quản trị", email: "admin@test.com" },
-            ].map((a, i) => (
-              <div key={i} className="rounded-lg bg-card/60 px-4 py-2 text-sm backdrop-blur-sm">
-                <span className="font-medium text-foreground">{a.role}:</span>{" "}
-                <span className="text-muted-foreground">{a.email} / 123456</span>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
 
@@ -73,13 +75,35 @@ const Login = () => {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" placeholder="your@email.com" value={email} onChange={e => setEmail(e.target.value)} required className="mt-1" />
+              <Input 
+                id="email" 
+                type="email" 
+                placeholder="your@email.com" 
+                value={email} 
+                onChange={e => setEmail(e.target.value)} 
+                required 
+                className="mt-1"
+                disabled={loading}
+              />
             </div>
             <div>
               <Label htmlFor="password">Mật khẩu</Label>
               <div className="relative mt-1">
-                <Input id="password" type={showPw ? "text" : "password"} placeholder="••••••" value={password} onChange={e => setPassword(e.target.value)} required />
-                <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" onClick={() => setShowPw(!showPw)}>
+                <Input 
+                  id="password" 
+                  type={showPw ? "text" : "password"} 
+                  placeholder="••••••" 
+                  value={password} 
+                  onChange={e => setPassword(e.target.value)} 
+                  required
+                  disabled={loading}
+                />
+                <button 
+                  type="button" 
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" 
+                  onClick={() => setShowPw(!showPw)}
+                  disabled={loading}
+                >
                   {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
