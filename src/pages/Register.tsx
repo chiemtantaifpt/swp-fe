@@ -10,22 +10,78 @@ import { toast } from "sonner";
 
 const Register = () => {
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<UserRole>("citizen");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [role, setRole] = useState<UserRole>("Citizen");
+  const [loading, setLoading] = useState(false);
+
+  // Enterprise-only fields
+  const [companyName, setCompanyName] = useState("");
+  const [taxCode, setTaxCode] = useState("");
+  const [businessAddress, setBusinessAddress] = useState("");
+  const [businessType, setBusinessType] = useState("");
+
   const { register } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await register(name, email, password, role);
-    toast.success("Đăng ký thành công!");
-    navigate(`/${role}`);
+
+    // Validation phía FE trước khi gọi API
+    if (!name || !phone || !email || !password || !confirmPassword) {
+      toast.error("Vui lòng nhập đầy đủ thông tin");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      toast.error("Mật khẩu xác nhận không trùng khớp");
+      return;
+    }
+
+    if (password.length < 6) {
+      toast.error("Mật khẩu phải có ít nhất 6 ký tự");
+      return;
+    }
+
+    if (!/\d/.test(password)) {
+      toast.error("Mật khẩu phải có ít nhất 1 chữ số (0-9)");
+      return;
+    }
+
+    if (role === "Enterprise" && (!companyName || !taxCode || !businessAddress)) {
+      toast.error("Vui lòng nhập đầy đủ thông tin doanh nghiệp");
+      return;
+    }
+
+    const roleToPath: Record<string, string> = {
+      "Citizen": "/citizen",
+      "Enterprise": "/enterprise",
+      "Collector": "/collector",
+      "Admin": "/admin",
+    };
+
+    setLoading(true);
+    try {
+      const enterpriseInfo = role === "Enterprise" ? { companyName, taxCode, address: businessAddress, businessType } : undefined;
+      await register(name, phone, email, password, role, enterpriseInfo);
+      toast.success("Đăng ký thành công! Vui lòng đăng nhập.");
+      navigate("/login");
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Đăng ký thất bại. Vui lòng thử lại!";
+      // Nếu có nhiều lỗi (mỗi dòng 1 lỗi), show từng toast
+      msg.split("\n").forEach((line) => {
+        if (line.trim()) toast.error(line.trim());
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8 shadow-elevated">
+    <div className="flex h-screen items-center justify-center overflow-hidden bg-background p-4">
+      <div className="w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-card p-8 shadow-elevated" style={{ maxHeight: "calc(100vh - 2rem)" }}>
         <Link to="/" className="mb-8 flex items-center justify-center gap-2">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
             <Recycle className="h-5 w-5 text-primary-foreground" />
@@ -39,28 +95,136 @@ const Register = () => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label htmlFor="name">Họ tên</Label>
-            <Input id="name" placeholder="Nguyễn Văn A" value={name} onChange={e => setName(e.target.value)} required className="mt-1" />
+            <Input 
+              id="name" 
+              placeholder="Nguyễn Văn A" 
+              value={name} 
+              onChange={e => setName(e.target.value)} 
+              required 
+              className="mt-1"
+              disabled={loading}
+            />
+          </div>
+          <div>
+            <Label htmlFor="phone">Số điện thoại</Label>
+            <Input
+              id="phone"
+              type="tel"
+              placeholder="0901234567"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              required
+              className="mt-1"
+              disabled={loading}
+            />
           </div>
           <div>
             <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" placeholder="your@email.com" value={email} onChange={e => setEmail(e.target.value)} required className="mt-1" />
+            <Input 
+              id="email" 
+              type="email" 
+              placeholder="your@email.com" 
+              value={email} 
+              onChange={e => setEmail(e.target.value)} 
+              required 
+              className="mt-1"
+              disabled={loading}
+            />
           </div>
           <div>
             <Label htmlFor="password">Mật khẩu</Label>
-            <Input id="password" type="password" placeholder="••••••" value={password} onChange={e => setPassword(e.target.value)} required className="mt-1" />
+            <Input 
+              id="password" 
+              type="password" 
+              placeholder="••••••" 
+              value={password} 
+              onChange={e => setPassword(e.target.value)} 
+              required 
+              className="mt-1"
+              disabled={loading}
+            />
+          </div>
+          <div>
+            <Label htmlFor="confirmPassword">Xác nhận mật khẩu</Label>
+            <Input 
+              id="confirmPassword" 
+              type="password" 
+              placeholder="••••••" 
+              value={confirmPassword} 
+              onChange={e => setConfirmPassword(e.target.value)} 
+              required 
+              className="mt-1"
+              disabled={loading}
+            />
           </div>
           <div>
             <Label>Vai trò</Label>
-            <Select value={role} onValueChange={v => setRole(v as UserRole)}>
+            <Select value={role} onValueChange={v => setRole(v as UserRole)} disabled={loading}>
               <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="citizen">Công dân</SelectItem>
-                <SelectItem value="enterprise">Doanh nghiệp tái chế</SelectItem>
-                <SelectItem value="collector">Người thu gom</SelectItem>
+                <SelectItem value="Citizen">Công dân</SelectItem>
+                <SelectItem value="Enterprise">Doanh nghiệp tái chế</SelectItem>
+                <SelectItem value="Collector">Người thu gom</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <Button type="submit" className="w-full">Đăng ký</Button>
+
+          {/* Enterprise-only fields */}
+          {role === "Enterprise" && (
+            <div className="space-y-4 rounded-lg border border-border bg-muted/40 p-4">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Thông tin doanh nghiệp</p>
+              <div>
+                <Label htmlFor="companyName">Tên công ty *</Label>
+                <Input
+                  id="companyName"
+                  placeholder="Công ty TNHH Tái chế Xanh"
+                  value={companyName}
+                  onChange={e => setCompanyName(e.target.value)}
+                  required
+                  className="mt-1"
+                  disabled={loading}
+                />
+              </div>
+              <div>
+                <Label htmlFor="taxCode">Mã số thuế *</Label>
+                <Input
+                  id="taxCode"
+                  placeholder="0123456789"
+                  value={taxCode}
+                  onChange={e => setTaxCode(e.target.value)}
+                  required
+                  className="mt-1"
+                  disabled={loading}
+                />
+              </div>
+              <div>
+                <Label htmlFor="businessAddress">Địa chỉ *</Label>
+                <Input
+                  id="businessAddress"
+                  placeholder="Số nhà, đường, quận, thành phố"
+                  value={businessAddress}
+                  onChange={e => setBusinessAddress(e.target.value)}
+                  required
+                  className="mt-1"
+                  disabled={loading}
+                />
+              </div>
+              <div>
+                <Label htmlFor="businessType">Loại hình kinh doanh</Label>
+                <Input
+                  id="businessType"
+                  placeholder="VD: Tái chế nhựa, kim loại..."
+                  value={businessType}
+                  onChange={e => setBusinessType(e.target.value)}
+                  className="mt-1"
+                  disabled={loading}
+                />
+              </div>
+            </div>
+          )}
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? "Đang xử lý..." : "Đăng ký"}
+          </Button>
         </form>
 
         <p className="mt-6 text-center text-sm text-muted-foreground">
