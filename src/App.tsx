@@ -7,8 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Landing from "./pages/Landing";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
+import AuthPage from "./pages/auth/AuthPage";
 import CitizenDashboard from "./pages/citizen/CitizenDashboard";
 import EnterpriseDashboard from "./pages/enterprise/EnterpriseDashboard";
 import CollectorDashboard from "./pages/collector/CollectorDashboard";
@@ -24,8 +23,8 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Landing />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
+            <Route path="/login" element={<AuthPage />} />
+            <Route path="/register" element={<AuthPage />} />
             <Route path="/citizen" element={<ProtectedRoute allowedRoles={["Citizen"]}><CitizenDashboard /></ProtectedRoute>} />
             <Route path="/enterprise" element={<ProtectedRoute allowedRoles={["Enterprise"]}><EnterpriseDashboard /></ProtectedRoute>} />
             <Route path="/collector" element={<ProtectedRoute allowedRoles={["Collector"]}><CollectorDashboard /></ProtectedRoute>} />
