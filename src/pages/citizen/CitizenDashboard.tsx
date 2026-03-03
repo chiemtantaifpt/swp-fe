@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import ReportDetailModal from "@/components/ReportDetailModal";
 import MapPicker from "@/components/MapPicker";
@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, MapPin, Clock, Award, Trophy, Star, Camera, TrendingUp, Loader2, ChevronRight, X, Map } from "lucide-react";
+import { Plus, MapPin, Clock, Award, Trophy, Star, Camera, TrendingUp, Loader2, ChevronRight, X, Map, Search, AlertTriangle, ChevronDown, ChevronLeft, Leaf, Recycle, Flame, Package } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { wasteReportService, WasteReport, CreateWasteReportRequest } from "@/services/wasteReport";
@@ -44,24 +44,35 @@ const CitizenDashboard = () => {
   const [open, setOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<WasteReport | null>(null);
 
-  // Form state (local - dùng riêng, không gõ theo CreateWasteReportRequest)
+  // Multi-select waste type state
+  const [selectedWasteTypeIds, setSelectedWasteTypeIds] = useState<string[]>([]);
+  const [wtSearch, setWtSearch] = useState("");
+  const [wtDropdownOpen, setWtDropdownOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+  const [locationName, setLocationName] = useState<string | null>(null);
+
+  // Form state
   const [form, setForm] = useState({
-    wasteTypeId: "",
     description: "",
     address: "",
     latitude: undefined as number | undefined,
     longitude: undefined as number | undefined,
   });
   const resetForm = () => {
-    setForm({ wasteTypeId: "", description: "", address: "", latitude: undefined, longitude: undefined });
+    setForm({ description: "", address: "", latitude: undefined, longitude: undefined });
     setImageFiles([]);
+    setSelectedWasteTypeIds([]);
+    setWtSearch("");
+    setSelectedCategory(null);
+    setLocationName(null);
   };
 
-  // Fetch danh sách loại rác cho dropdown
-  const { data: wasteTypes = [] } = useQuery({
+  // Fetch danh sách loại rác cho dropdown (chỉ active)
+  const { data: allWasteTypes = [] } = useQuery({
     queryKey: ["wasteTypes"],
     queryFn: () => wasteTypeService.getAll(),
   });
+  const wasteTypes = allWasteTypes.filter((w) => w.isActive !== false);
 
   // Fetch danh sách báo cáo của citizen hiện tại
   const { data: rawReports = [], isLoading: loadingReports } = useQuery({
@@ -102,34 +113,96 @@ const CitizenDashboard = () => {
     onError: () => toast.error("Hủy báo cáo thất bại. Vui lòng thử lại!"),
   });
 
-  // Lấy GPS tự động
   const getGPS = () => {
     if (!navigator.geolocation) {
       toast.error("Trình duyệt không hỗ trợ GPS");
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setForm((f) => ({ ...f, latitude: pos.coords.latitude, longitude: pos.coords.longitude }));
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        setForm((f) => ({ ...f, latitude: lat, longitude: lng }));
         toast.success("Đã lấy tọa độ GPS thành công!");
+        // Reverse geocode
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=vi`);
+          const data = await res.json();
+          const addr = data.address;
+          const name = [addr.suburb || addr.quarter, addr.city_district || addr.county, addr.city || addr.town].filter(Boolean).join(", ");
+          setLocationName(name || null);
+        } catch { setLocationName(null); }
       },
       () => toast.error("Không thể lấy tọa độ GPS. Vui lòng nhập địa chỉ thủ công.")
     );
   };
 
+  // Category cards for step-1 dropdown
+  const CATEGORY_CARDS = [
+    { value: 0, label: "Hữu cơ",  Icon: Leaf,     iconColor: "text-green-600",  borderColor: "border-green-200",  bgHover: "hover:bg-green-50" },
+    { value: 1, label: "Tái chế", Icon: Recycle,  iconColor: "text-blue-600",   borderColor: "border-blue-200",   bgHover: "hover:bg-blue-50" },
+    { value: 2, label: "Nguy hại",Icon: Flame,    iconColor: "text-orange-600", borderColor: "border-orange-200", bgHover: "hover:bg-orange-50" },
+    { value: 3, label: "Khác",    Icon: Package,  iconColor: "text-gray-500",   borderColor: "border-gray-200",   bgHover: "hover:bg-gray-50" },
+  ];
+
+  // Grouped counts for step-1 cards (all active waste types, no search)
+  const groupedWasteTypes = useMemo(() => {
+    const groups: Record<number, typeof wasteTypes> = {};
+    wasteTypes.forEach((w) => {
+      const cat = w.category ?? 3;
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(w);
+    });
+    return groups;
+  }, [wasteTypes]);
+
+  // Filtered list for step-2 (by selected category + search query)
+  const filteredWasteTypes = useMemo(() => {
+    return wasteTypes.filter((w) => {
+      const cat = w.category ?? 3;
+      const matchesCat = selectedCategory === null || cat === selectedCategory;
+      const matchesSearch = !wtSearch || w.name.toLowerCase().includes(wtSearch.toLowerCase());
+      return matchesCat && matchesSearch;
+    });
+  }, [wasteTypes, wtSearch, selectedCategory]);
+
+  const hasHazardous = useMemo(() => {
+    return selectedWasteTypeIds.some((id) => {
+      const wt = wasteTypes.find((w) => w.id === id);
+      return wt?.category === 2;
+    });
+  }, [selectedWasteTypeIds, wasteTypes]);
+
+  const toggleWasteType = (id: string) => {
+    setSelectedWasteTypeIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= 5) { toast.error("Chỉ được chọn tối đa 5 loại rác"); return prev; }
+      return [...prev, id];
+    });
+  };
+
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.wasteTypeId) {
-      toast.error("Vui lòng chọn loại rác");
-      return;
-    }
+    if (selectedWasteTypeIds.length === 0) { toast.error("Vui lòng chọn ít nhất 1 loại rác"); return; }
+    if (imageFiles.length === 0) { toast.error("Vui lòng có ít nhất 1 ảnh"); return; }
+    if (!form.latitude) { toast.error("Vui lòng xác định vị trí GPS"); return; }
+    if (!form.address) { toast.error("Vui lòng nhập địa chỉ chi tiết"); return; }
     createMutation.mutate({
       description: form.description || undefined,
       latitude: form.latitude,
       longitude: form.longitude,
-      wastes: [{ wasteTypeId: form.wasteTypeId, images: imageFiles.length > 0 ? imageFiles : undefined }],
+      wastes: selectedWasteTypeIds.map((id, i) => ({
+        wasteTypeId: id,
+        images: i === 0 && imageFiles.length > 0 ? imageFiles : undefined,
+      })),
     });
   };
+
+  const isSubmitDisabled = createMutation.isPending ||
+    selectedWasteTypeIds.length === 0 ||
+    imageFiles.length === 0 ||
+    !form.latitude ||
+    !form.address;
 
   // Thống kê nhanh từ danh sách báo cáo
   const totalReports = reports.length;
@@ -177,34 +250,145 @@ const CitizenDashboard = () => {
               <DialogTrigger asChild>
                 <Button size="sm"><Plus className="mr-1 h-4 w-4" /> Tạo báo cáo mới</Button>
               </DialogTrigger>
-              <DialogContent className="max-w-md">
+              <DialogContent className="max-w-md overflow-y-auto" style={{ maxHeight: "90vh" }}>
                 <DialogHeader>
                   <DialogTitle className="font-display">Tạo báo cáo rác mới</DialogTitle>
                 </DialogHeader>
-                <form onSubmit={handleCreate} className="space-y-4">
+                <form onSubmit={handleCreate} className="space-y-4 pb-2">
+
+                  {/* ── Loại rác multi-select ── */}
                   <div>
                     <Label>Loại rác *</Label>
-                    <Select
-                      value={form.wasteTypeId}
-                      onValueChange={(v) => setForm((f) => ({ ...f, wasteTypeId: v }))}
-                    >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue placeholder="Chọn loại rác" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {wasteTypes.length > 0 ? (
-                          wasteTypes.map((w) => (
-                            <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                          ))
+                    <div className="relative mt-1">
+                      {/* Trigger box */}
+                      <div
+                        className="min-h-10 cursor-pointer rounded-md border border-input bg-background px-3 py-2 pr-16 text-sm ring-offset-background transition-colors hover:border-primary focus-within:ring-2 focus-within:ring-ring"
+                        onClick={() => setWtDropdownOpen((v) => !v)}
+                      >
+                        {selectedWasteTypeIds.length === 0 ? (
+                          <span className="text-muted-foreground">Chọn tối đa 5 loại rác</span>
                         ) : (
-                          // Fallback nếu API WasteType chưa có
-                          ["Nhựa", "Giấy/Carton", "Kim loại", "Thủy tinh", "Hữu cơ", "Nguy hại", "Khác"].map((w) => (
-                            <SelectItem key={w} value={w}>{w}</SelectItem>
-                          ))
+                          <div className="flex flex-wrap gap-1.5">
+                            {selectedWasteTypeIds.map((id) => {
+                              const wt = wasteTypes.find((w) => w.id === id);
+                              return (
+                                <span key={id} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                                  {wt?.name ?? id}
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); toggleWasteType(id); }}>
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </span>
+                              );
+                            })}
+                          </div>
                         )}
-                      </SelectContent>
-                    </Select>
+                        {/* Counter + chevron */}
+                        <div className="absolute right-3 top-2.5 flex items-center gap-1.5">
+                          {selectedWasteTypeIds.length > 0 && (
+                            <span className="text-[11px] font-medium text-muted-foreground">{selectedWasteTypeIds.length}/5</span>
+                          )}
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </div>
+
+                      {/* Dropdown panel */}
+                      {wtDropdownOpen && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => { setWtDropdownOpen(false); setWtSearch(""); setSelectedCategory(null); }} />
+                          <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-lg">
+
+                            {selectedCategory === null ? (
+                              /* ── Step 1: Category selection ── */
+                              <div className="p-2">
+                                <p className="px-2 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                  Chọn danh mục
+                                </p>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {CATEGORY_CARDS.map((cat) => {
+                                    const count = (groupedWasteTypes[cat.value] ?? []).length;
+                                    return (
+                                      <button
+                                        key={cat.value}
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); setSelectedCategory(cat.value); setWtSearch(""); }}
+                                        className={`flex flex-col items-center gap-1.5 rounded-lg border-2 p-3 text-center transition-colors ${cat.borderColor} ${cat.bgHover}`}
+                                      >
+                                        <cat.Icon className={`h-6 w-6 ${cat.iconColor}`} />
+                                        <span className="text-xs font-semibold">{cat.label}</span>
+                                        <span className="text-[10px] text-muted-foreground">{count} loại</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ) : (
+                              /* ── Step 2: WasteType list within selected category ── */
+                              <div>
+                                {/* Back button */}
+                                <button
+                                  type="button"
+                                  className="flex w-full items-center gap-2 border-b border-border px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                                  onClick={(e) => { e.stopPropagation(); setSelectedCategory(null); setWtSearch(""); }}
+                                >
+                                  <ChevronLeft className="h-4 w-4" />
+                                  <span>Quay lại danh mục</span>
+                                  <span className="ml-auto font-medium text-foreground">
+                                    {CATEGORY_CARDS.find((c) => c.value === selectedCategory)?.label}
+                                  </span>
+                                </button>
+                                {/* Search */}
+                                <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+                                  <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                                  <input
+                                    autoFocus
+                                    className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                                    placeholder="Tìm loại rác..."
+                                    value={wtSearch}
+                                    onChange={(e) => setWtSearch(e.target.value)}
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                </div>
+                                {/* WasteType list */}
+                                <div className="max-h-52 overflow-y-auto py-1">
+                                  {filteredWasteTypes.length === 0 ? (
+                                    <p className="px-3 py-4 text-center text-xs text-muted-foreground">Không tìm thấy loại rác</p>
+                                  ) : (
+                                    filteredWasteTypes.map((wt) => {
+                                      const selected = selectedWasteTypeIds.includes(wt.id);
+                                      return (
+                                        <div
+                                          key={wt.id}
+                                          className={`flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-muted ${selected ? "bg-primary/5 font-medium text-primary" : ""}`}
+                                          onClick={(e) => { e.stopPropagation(); toggleWasteType(wt.id); }}
+                                        >
+                                          <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                                            selected ? "border-primary bg-primary text-primary-foreground" : "border-input"
+                                          }`}>
+                                            {selected && <span className="text-[10px] leading-none">✓</span>}
+                                          </span>
+                                          <span className="truncate">{wt.name}</span>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">Bạn có thể chọn tối đa 5 loại rác trong một báo cáo.</p>
+                    {hasHazardous && (
+                      <div className="mt-1.5 flex items-start gap-2 rounded-md border-l-4 border-orange-400 bg-yellow-50 px-3 py-2 text-xs text-yellow-800 dark:bg-yellow-950/30 dark:text-yellow-300">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-500" />
+                        <span><span className="font-semibold">Rác nguy hại</span> sẽ được xử lý theo quy trình riêng.</span>
+                      </div>
+                    )}
                   </div>
+
+                  {/* ── Mô tả ── */}
                   <div>
                     <Label>Mô tả</Label>
                     <Textarea
@@ -213,9 +397,12 @@ const CitizenDashboard = () => {
                       value={form.description || ""}
                       onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                     />
+                    <p className="mt-1 text-xs text-muted-foreground">Mô tả giúp đơn vị thu gom xử lý nhanh hơn.</p>
                   </div>
+
+                  {/* ── Hình ảnh ── */}
                   <div>
-                    <Label>Hình ảnh</Label>
+                    <Label>Hình ảnh *</Label>
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -235,17 +422,13 @@ const CitizenDashboard = () => {
                       {imageFiles.length === 0 ? (
                         <div className="text-center">
                           <Camera className="mx-auto h-6 w-6 text-muted-foreground" />
-                          <span className="mt-1 text-xs text-muted-foreground">Chụp / tải ảnh lên</span>
+                          <span className="mt-1 block text-xs text-muted-foreground">Chụp / tải ảnh lên</span>
                         </div>
                       ) : (
                         <div className="flex w-full flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
                           {imageFiles.map((file, i) => (
                             <div key={i} className="relative h-16 w-16 overflow-hidden rounded-md border border-border">
-                              <img
-                                src={URL.createObjectURL(file)}
-                                alt={file.name}
-                                className="h-full w-full object-cover"
-                              />
+                              <img src={URL.createObjectURL(file)} alt={file.name} className="h-full w-full object-cover" />
                               <button
                                 type="button"
                                 className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-destructive-foreground"
@@ -264,9 +447,12 @@ const CitizenDashboard = () => {
                         </div>
                       )}
                     </div>
+                    <p className="mt-1 text-xs text-muted-foreground">Chụp rõ toàn bộ đống rác để xác nhận nhanh hơn.</p>
                   </div>
+
+                  {/* ── Vị trí GPS ── */}
                   <div>
-                    <Label>Vị trí GPS</Label>
+                    <Label>Vị trí GPS *</Label>
                     <div className="mt-1 flex gap-2">
                       <Button type="button" variant="outline" size="sm" className="flex-1 gap-2" onClick={getGPS}>
                         <MapPin className="h-4 w-4" />
@@ -277,7 +463,15 @@ const CitizenDashboard = () => {
                         Chọn trên bản đồ
                       </Button>
                     </div>
+                    {form.latitude && locationName && (
+                      <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                        <MapPin className="h-3 w-3 text-primary" />
+                        Đã xác định vị trí: <span className="font-medium text-foreground">{locationName}</span>
+                      </p>
+                    )}
                   </div>
+
+                  {/* ── Địa chỉ chi tiết ── */}
                   <div>
                     <Label>Địa chỉ chi tiết *</Label>
                     <Input
@@ -285,10 +479,20 @@ const CitizenDashboard = () => {
                       placeholder="Số nhà, đường, phường..."
                       value={form.address}
                       onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-                      required
                     />
                   </div>
-                  <Button type="submit" className="w-full" disabled={createMutation.isPending}>
+
+                  {/* Validation hints */}
+                  {(selectedWasteTypeIds.length === 0 || imageFiles.length === 0 || !form.latitude || !form.address) && (
+                    <ul className="space-y-0.5 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                      {selectedWasteTypeIds.length === 0 && <li>• Chọn ít nhất 1 loại rác</li>}
+                      {imageFiles.length === 0 && <li>• Thêm ít nhất 1 ảnh</li>}
+                      {!form.latitude && <li>• Xác định vị trí GPS</li>}
+                      {!form.address && <li>• Nhập địa chỉ chi tiết</li>}
+                    </ul>
+                  )}
+
+                  <Button type="submit" className="w-full" disabled={isSubmitDisabled}>
                     {createMutation.isPending ? (
                       <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Đang gửi...</>
                     ) : "Gửi báo cáo"}
@@ -385,6 +589,7 @@ const CitizenDashboard = () => {
         onClose={() => setMapPickerOpen(false)}
         onConfirm={(lat, lng, address) => {
           setForm((f) => ({ ...f, latitude: lat, longitude: lng, address: address || f.address }));
+          if (address) setLocationName(address);
           setMapPickerOpen(false);
         }}
         initialLat={form.latitude}
