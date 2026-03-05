@@ -18,10 +18,12 @@ const Register = () => {
   const [loading, setLoading] = useState(false);
 
   // Enterprise-only fields
-  const [companyName, setCompanyName] = useState("");
+  const [enterpriseName, setEnterpriseName] = useState("");
   const [taxCode, setTaxCode] = useState("");
   const [businessAddress, setBusinessAddress] = useState("");
-  const [businessType, setBusinessType] = useState("");
+  const [legalRepresentative, setLegalRepresentative] = useState("");
+  const [representativePosition, setRepresentativePosition] = useState("");
+  const [environmentLicenseFileId] = useState<string | undefined>(undefined);
 
   const { register } = useAuth();
   const navigate = useNavigate();
@@ -50,7 +52,7 @@ const Register = () => {
       return;
     }
 
-    if (role === "Enterprise" && (!companyName || !taxCode || !businessAddress)) {
+    if (role === "Enterprise" && (!enterpriseName || !taxCode || !businessAddress || !legalRepresentative || !representativePosition)) {
       toast.error("Vui lòng nhập đầy đủ thông tin doanh nghiệp");
       return;
     }
@@ -64,7 +66,7 @@ const Register = () => {
 
     setLoading(true);
     try {
-      const enterpriseInfo = role === "Enterprise" ? { companyName, taxCode, address: businessAddress, businessType } : undefined;
+      const enterpriseInfo = role === "Enterprise" ? { enterpriseName, taxCode, address: businessAddress, legalRepresentative, representativePosition, ...(environmentLicenseFileId ? { environmentLicenseFileId } : {}) } : undefined;
       await register(name, phone, email, password, role, enterpriseInfo);
       toast.success("Đăng ký thành công! Vui lòng đăng nhập.");
       navigate("/login");
@@ -172,14 +174,16 @@ const Register = () => {
           {/* Enterprise-only fields */}
           {role === "Enterprise" && (
             <div className="space-y-4 rounded-lg border border-border bg-muted/40 p-4">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Thông tin doanh nghiệp</p>
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <span>🏢</span> Thông tin doanh nghiệp
+              </p>
               <div>
-                <Label htmlFor="companyName">Tên công ty *</Label>
+                <Label htmlFor="enterpriseName">Tên doanh nghiệp *</Label>
                 <Input
-                  id="companyName"
+                  id="enterpriseName"
                   placeholder="Công ty TNHH Tái chế Xanh"
-                  value={companyName}
-                  onChange={e => setCompanyName(e.target.value)}
+                  value={enterpriseName}
+                  onChange={e => setEnterpriseName(e.target.value)}
                   required
                   className="mt-1"
                   disabled={loading}
@@ -210,12 +214,25 @@ const Register = () => {
                 />
               </div>
               <div>
-                <Label htmlFor="businessType">Loại hình kinh doanh</Label>
+                <Label htmlFor="legalRepresentative">Người đại diện pháp luật *</Label>
                 <Input
-                  id="businessType"
-                  placeholder="VD: Tái chế nhựa, kim loại..."
-                  value={businessType}
-                  onChange={e => setBusinessType(e.target.value)}
+                  id="legalRepresentative"
+                  placeholder="Nguyễn Văn A"
+                  value={legalRepresentative}
+                  onChange={e => setLegalRepresentative(e.target.value)}
+                  required
+                  className="mt-1"
+                  disabled={loading}
+                />
+              </div>
+              <div>
+                <Label htmlFor="representativePosition">Chức vụ người đại diện *</Label>
+                <Input
+                  id="representativePosition"
+                  placeholder="Giám đốc / Tổng giám đốc..."
+                  value={representativePosition}
+                  onChange={e => setRepresentativePosition(e.target.value)}
+                  required
                   className="mt-1"
                   disabled={loading}
                 />

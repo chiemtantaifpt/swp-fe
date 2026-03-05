@@ -119,10 +119,12 @@ function parseBackendError(error: AxiosError): string {
 }
 
 export interface EnterpriseInfo {
-  companyName: string;
+  enterpriseName: string;
   taxCode: string;
   address: string;
-  businessType?: string;
+  legalRepresentative: string;
+  representativePosition: string;
+  environmentLicenseFileId?: string;
 }
 
 export const authService = {
@@ -151,12 +153,12 @@ export const authService = {
   ): Promise<AuthResponse> => {
     try {
       const response = await api.post<AuthResponse>("/auth/register", {
-        FullName: fullName,
-        Phone: phone,
+        fullName,
+        phone,
         email,
         password,
         role,
-        ...(enterpriseInfo ? { EnterpriseInfo: enterpriseInfo } : {}),
+        ...(enterpriseInfo ? { enterpriseInfo } : {}),
       });
       return response.data;
     } catch (error) {

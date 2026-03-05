@@ -29,7 +29,7 @@ export interface WasteReport {
 export interface WasteItem {
   wasteTypeId: string;
   note?: string;
-  images?: File[];
+  images?: string[]; // Cloudinary URLs (upload trước qua /api/Image/upload-multiple)
 }
 
 export interface CreateWasteReportRequest {
@@ -54,11 +54,12 @@ export const wasteReportService = {
     if (data.description) formData.append("Description", data.description);
     if (data.latitude != null) formData.append("Latitude", data.latitude.toString());
     if (data.longitude != null) formData.append("Longitude", data.longitude.toString());
-    data.wastes.forEach((waste, i) => {
-      formData.append(`Wastes[${i}].wasteTypeId`, waste.wasteTypeId);
-      if (waste.note) formData.append(`Wastes[${i}].note`, waste.note);
-      waste.images?.forEach((file, j) => {
-        formData.append(`Wastes[${i}].images[${j}]`, file, file.name);
+    // [FromForm] binding yêu cầu indexed fields cho nested collections
+    data.wastes.forEach((w, i) => {
+      formData.append(`Wastes[${i}].WasteTypeId`, w.wasteTypeId);
+      if (w.note) formData.append(`Wastes[${i}].Note`, w.note);
+      w.images?.forEach((url, j) => {
+        formData.append(`Wastes[${i}].Images[${j}]`, url);
       });
     });
     const response = await api.post<WasteReport>("/WasteReport", formData, {
