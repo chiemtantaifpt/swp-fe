@@ -17,9 +17,11 @@ type FieldErrors = Partial<
     | "email"
     | "password"
     | "confirmPassword"
-    | "companyName"
+    | "enterpriseName"
     | "taxCode"
-    | "businessAddress",
+    | "businessAddress"
+    | "legalRepresentative"
+    | "representativePosition",
     string
   >
 >;
@@ -37,10 +39,11 @@ export default function RegisterForm() {
   const [errors, setErrors] = useState<FieldErrors>({});
 
   // Enterprise-only fields
-  const [companyName, setCompanyName] = useState("");
+  const [enterpriseName, setEnterpriseName] = useState("");
   const [taxCode, setTaxCode] = useState("");
   const [businessAddress, setBusinessAddress] = useState("");
-  const [businessType, setBusinessType] = useState("");
+  const [legalRepresentative, setLegalRepresentative] = useState("");
+  const [representativePosition, setRepresentativePosition] = useState("");
 
   const { register } = useAuth();
   const navigate = useNavigate();
@@ -63,15 +66,17 @@ export default function RegisterForm() {
     if (!confirmPassword) e.confirmPassword = "Vui lòng xác nhận mật khẩu";
     else if (password !== confirmPassword) e.confirmPassword = "Mật khẩu không trùng khớp";
     if (role === "Enterprise") {
-      if (!companyName.trim()) e.companyName = "Vui lòng nhập tên công ty";
+      if (!enterpriseName.trim()) e.enterpriseName = "Vui lòng nhập tên doanh nghiệp";
       if (!taxCode.trim()) e.taxCode = "Vui lòng nhập mã số thuế";
       if (!businessAddress.trim()) e.businessAddress = "Vui lòng nhập địa chỉ";
+      if (!legalRepresentative.trim()) e.legalRepresentative = "Vui lòng nhập người đại diện";
+      if (!representativePosition.trim()) e.representativePosition = "Vui lòng nhập chức vụ đại diện";
     }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  const handleSubmit = async (ev: React.FormEvent) => {
+  const handleSubmit = async (ev: React.FormEvent | React.MouseEvent) => {
     ev.preventDefault();
     if (!validate()) return;
 
@@ -79,7 +84,7 @@ export default function RegisterForm() {
     try {
       const enterpriseInfo =
         role === "Enterprise"
-          ? { companyName, taxCode, address: businessAddress, businessType }
+          ? { enterpriseName, taxCode, address: businessAddress, legalRepresentative, representativePosition }
           : undefined;
       await register(name, phone, email, password, role, enterpriseInfo);
       toast.success("Đăng ký thành công! Vui lòng đăng nhập.");
@@ -107,7 +112,8 @@ export default function RegisterForm() {
       </CardHeader>
 
       <CardContent>
-        <form onSubmit={handleSubmit} noValidate className="space-y-4">
+        {/* Use div instead of form to prevent browser from auto-clearing password fields on failed submission */}
+        <div className="space-y-4">
           {/* Row: Họ tên + Phone */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -237,17 +243,17 @@ export default function RegisterForm() {
               </div>
               <div className="space-y-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="companyName">Tên công ty *</Label>
+                  <Label htmlFor="enterpriseName">Tên doanh nghiệp *</Label>
                   <Input
-                    id="companyName"
+                    id="enterpriseName"
                     placeholder="Công ty TNHH Tái chế Xanh"
-                    value={companyName}
-                    onChange={(e) => { setCompanyName(e.target.value); clearError("companyName"); }}
+                    value={enterpriseName}
+                    onChange={(e) => { setEnterpriseName(e.target.value); clearError("enterpriseName"); }}
                     disabled={loading}
-                    className={errors.companyName ? "border-destructive" : ""}
+                    className={errors.enterpriseName ? "border-destructive" : ""}
                   />
-                  {errors.companyName && (
-                    <p className="text-xs text-destructive">{errors.companyName}</p>
+                  {errors.enterpriseName && (
+                    <p className="text-xs text-destructive">{errors.enterpriseName}</p>
                   )}
                 </div>
                 <div className="space-y-1.5">
@@ -279,14 +285,32 @@ export default function RegisterForm() {
                   )}
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="businessType">Loại hình kinh doanh</Label>
+                  <Label htmlFor="legalRepresentative">Người đại diện pháp luật *</Label>
                   <Input
-                    id="businessType"
-                    placeholder="VD: Tái chế nhựa, kim loại..."
-                    value={businessType}
-                    onChange={(e) => setBusinessType(e.target.value)}
+                    id="legalRepresentative"
+                    placeholder="Nguyễn Văn A"
+                    value={legalRepresentative}
+                    onChange={(e) => { setLegalRepresentative(e.target.value); clearError("legalRepresentative"); }}
                     disabled={loading}
+                    className={errors.legalRepresentative ? "border-destructive" : ""}
                   />
+                  {errors.legalRepresentative && (
+                    <p className="text-xs text-destructive">{errors.legalRepresentative}</p>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="representativePosition">Chức vụ người đại diện *</Label>
+                  <Input
+                    id="representativePosition"
+                    placeholder="Giám đốc / Tổng giám đốc..."
+                    value={representativePosition}
+                    onChange={(e) => { setRepresentativePosition(e.target.value); clearError("representativePosition"); }}
+                    disabled={loading}
+                    className={errors.representativePosition ? "border-destructive" : ""}
+                  />
+                  {errors.representativePosition && (
+                    <p className="text-xs text-destructive">{errors.representativePosition}</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -294,7 +318,8 @@ export default function RegisterForm() {
 
           {/* Submit */}
           <Button
-            type="submit"
+            type="button"
+            onClick={handleSubmit}
             className="mt-2 w-full font-semibold transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98]"
             disabled={loading}
           >
@@ -310,7 +335,7 @@ export default function RegisterForm() {
               </>
             )}
           </Button>
-        </form>
+        </div>
 
         <Separator className="my-5" />
 

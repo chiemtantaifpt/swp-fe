@@ -8,18 +8,20 @@ interface AuthLayoutProps {
 
 export default function AuthLayout({ children }: AuthLayoutProps) {
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex h-screen overflow-hidden bg-background">
       {/* ── Left: Animated Brand Panel (desktop only) ── */}
-      <div className="hidden md:block md:w-[45%] lg:w-1/2 flex-shrink-0">
-        <div className="sticky top-0 h-screen w-full">
+      <div className="hidden md:block md:w-[45%] lg:w-1/2 flex-shrink-0 overflow-hidden">
+        <div className="h-full w-full">
           <AnimatedBrandPanel />
         </div>
       </div>
 
-      {/* ── Right: Form area ─────────────────────────── */}
-      <div className="flex flex-1 flex-col">
-        {/* Mobile-only mini header */}
-        <div className="flex items-center gap-2.5 border-b border-border bg-card px-5 py-3.5 md:hidden">
+      {/* ── Right: direct overflow-y-auto on the flex child ── */}
+      {/* In a flex row with h-screen on parent, this child is capped at h-screen */}
+      {/* overflow-y-auto then creates the scrollbar here, not on <body>        */}
+      <div className="flex-1 overflow-y-auto bg-background md:bg-muted/30">
+        {/* Mobile-only mini header — sticky inside the scroll area */}
+        <div className="sticky top-0 z-10 flex items-center gap-2.5 border-b border-border bg-card px-5 py-3.5 md:hidden">
           <Link to="/" className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary shadow-sm">
               <Recycle className="h-4 w-4 text-primary-foreground" />
@@ -28,8 +30,8 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
           </Link>
         </div>
 
-        {/* Scrollable form container */}
-        <div className="flex flex-1 items-start justify-center overflow-y-auto bg-background py-8 px-4 md:items-center md:bg-muted/30">
+        {/* Form content */}
+        <div className="flex justify-center px-4 py-8">
           <div className="w-full max-w-md">{children}</div>
         </div>
       </div>

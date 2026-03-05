@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import ReportDetailModal from "@/components/ReportDetailModal";
 import MapPicker from "@/components/MapPicker";
@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { wasteReportService, WasteReport, CreateWasteReportRequest } from "@/services/wasteReport";
 import { wasteTypeService } from "@/services/wasteType";
+import { imageService } from "@/services/image";
 
 const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   PENDING: { label: "Chờ xử lý", variant: "secondary" },
@@ -43,6 +44,16 @@ const CitizenDashboard = () => {
   const [mapPickerOpen, setMapPickerOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<WasteReport | null>(null);
+  const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
+
+  // Tạo blob preview URLs 1 lần khi imageFiles thay đổi, cleanup để tránh memory leak
+  useEffect(() => {
+    const urls = imageFiles.map((file) => URL.createObjectURL(file));
+    setImagePreviewUrls(urls);
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [imageFiles]);
 
   // Multi-select waste type state
   const [selectedWasteTypeIds, setSelectedWasteTypeIds] = useState<string[]>([]);
@@ -181,19 +192,40 @@ const CitizenDashboard = () => {
     });
   };
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedWasteTypeIds.length === 0) { toast.error("Vui lòng chọn ít nhất 1 loại rác"); return; }
     if (imageFiles.length === 0) { toast.error("Vui lòng có ít nhất 1 ảnh"); return; }
     if (!form.latitude) { toast.error("Vui lòng xác định vị trí GPS"); return; }
     if (!form.address) { toast.error("Vui lòng nhập địa chỉ chi tiết"); return; }
+
+    // Upload ảnh trước, lấy URLs
+    let imageUrls: string[] = [];
+    try {
+      if (imageFiles.length === 1) {
+        const result = await imageService.uploadOne(imageFiles[0]);
+        imageUrls = [result.url];
+      } else {
+        const result = await imageService.uploadMultiple(imageFiles);
+        if (result.failureCount > 0) {
+          toast.error(`Upload ảnh thất bại ${result.failureCount} / ${imageFiles.length} file`);
+          return;
+        }
+        imageUrls = result.uploaded.map((u) => u.url);
+      }
+    } catch {
+      toast.error("Upload ảnh thất bại, vui lòng thử lại");
+      return;
+    }
+
     createMutation.mutate({
       description: form.description || undefined,
       latitude: form.latitude,
       longitude: form.longitude,
       wastes: selectedWasteTypeIds.map((id, i) => ({
         wasteTypeId: id,
-        images: i === 0 && imageFiles.length > 0 ? imageFiles : undefined,
+        // Gắn toàn bộ URL ảnh vào waste đầu tiên
+        images: i === 0 ? imageUrls : undefined,
       })),
     });
   };
@@ -428,7 +460,7 @@ const CitizenDashboard = () => {
                         <div className="flex w-full flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
                           {imageFiles.map((file, i) => (
                             <div key={i} className="relative h-16 w-16 overflow-hidden rounded-md border border-border">
-                              <img src={URL.createObjectURL(file)} alt={file.name} className="h-full w-full object-cover" />
+                              <img src={imagePreviewUrls[i]} alt={file.name} className="h-full w-full object-cover" />
                               <button
                                 type="button"
                                 className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-destructive-foreground"
