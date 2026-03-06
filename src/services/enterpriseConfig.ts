@@ -1,6 +1,40 @@
 import api from "./api";
 
 // ─────────────────────────────────────────────
+// RecyclingEnterprise
+// ─────────────────────────────────────────────
+export interface RecyclingEnterprise {
+  id: string;
+  userId: string;
+  name: string;
+  taxCode: string;
+  address: string;
+  legalRepresentative: string;
+  representativePosition: string;
+  environmentLicenseFileId: string;
+  approvalStatus: string;
+  operationalStatus: string;
+  createdTime: string;
+}
+
+export interface RecyclingEnterpriseListParams {
+  PageNumber?: number;
+  PageSize?: number;
+}
+
+export const recyclingEnterpriseService = {
+  getAll: async (params?: RecyclingEnterpriseListParams): Promise<{ totalCount: number; pageNumber: number; pageSize: number; items: RecyclingEnterprise[] }> => {
+    const res = await api.get("/RecyclingEnterprise", { params });
+    return res.data;
+  },
+
+  getById: async (id: string): Promise<RecyclingEnterprise> => {
+    const res = await api.get<RecyclingEnterprise>(`/RecyclingEnterprise/${id}`);
+    return res.data;
+  },
+};
+
+// ─────────────────────────────────────────────
 // EnterpriseServiceArea
 // ─────────────────────────────────────────────
 export interface ServiceArea {

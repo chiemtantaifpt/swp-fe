@@ -18,25 +18,12 @@ import {
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
-import { serviceAreaService, wasteCapabilityService } from "@/services/enterpriseConfig";
+import { serviceAreaService, wasteCapabilityService, recyclingEnterpriseService } from "@/services/enterpriseConfig";
 import { wasteTypeService } from "@/services/wasteType";
+import { collectionRequestService, CollectionRequest } from "@/services/collectionRequest";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
-const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  PENDING:    { label: "Chờ xử lý",    variant: "secondary"    },
-  PROCESSING: { label: "Đã tiếp nhận", variant: "outline"      },
-  ASSIGNED:   { label: "Đã điều phối", variant: "default"      },
-  COMPLETED:  { label: "Hoàn thành",   variant: "default"      },
-  REJECTED:   { label: "Từ chối",      variant: "destructive"  },
-};
 
-const mockRequests = [
-  { id: "WR-001", citizen: "Nguyễn Văn An",  wasteType: "Nhựa",         status: "PENDING",    date: "2025-02-27", address: "123 Nguyễn Huệ, Q.1",      weight: "~5kg" },
-  { id: "WR-002", citizen: "Trần Thị B",     wasteType: "Giấy/Carton",  status: "PENDING",    date: "2025-02-27", address: "45 Lê Lợi, Q.1",           weight: "~8kg" },
-  { id: "WR-003", citizen: "Lê Văn C",       wasteType: "Kim loại",     status: "PROCESSING", date: "2025-02-26", address: "78 Trần Hưng Đạo, Q.1",     weight: "~3kg" },
-  { id: "WR-004", citizen: "Phạm Thị D",     wasteType: "Nhựa",         status: "ASSIGNED",   date: "2025-02-26", address: "12 Hai Bà Trưng, Q.1",      weight: "~6kg",  collector: "Trần Minh Tuấn" },
-  { id: "WR-005", citizen: "Hoàng Văn E",    wasteType: "Thủy tinh",    status: "COMPLETED",  date: "2025-02-25", address: "56 Pasteur, Q.1",           weight: "~4kg",  collector: "Trần Minh Tuấn" },
-];
 
 const mockCollectors = [
   { id: "C1", name: "Trần Minh Tuấn",    status: "online",  tasks: 3, completed: 42 },
@@ -60,13 +47,58 @@ const SkeletonRows = ({ cols, rows = 4 }: { cols: number; rows?: number }) => (
 // ═══════════════════════════════════════════════════════════════════════════════
 const EnterpriseDashboard = () => {
   const { user } = useAuth();
-  const enterpriseId = user?.id ?? "";
   const qc = useQueryClient();
 
-  // ── mock actions ──
-  const handleAccept = (id: string) => toast.success(`Đã tiếp nhận yêu cầu ${id}`);
-  const handleReject = (id: string) => toast.info(`Đã từ chối yêu cầu ${id}`);
-  const handleAssign = (id: string) => toast.success(`Đã gán collector cho ${id}`);
+  // ── resolve enterpriseId: GET /RecyclingEnterprise → find by userId ──
+  const { data: myEnterprise } = useQuery({
+    queryKey: ["myEnterprise", user?.id],
+    queryFn: async () => {
+      const list = await recyclingEnterpriseService.getAll({ PageSize: 100 });
+      const found = list.items.find((e) => e.userId === user?.id);
+      if (!found) return null;
+      return recyclingEnterpriseService.getById(found.id);
+    },
+    enabled: !!user?.id,
+  });
+  const enterpriseId = myEnterprise?.id ?? "";
+
+  // ── inner tab state for requests ──
+  const [reqStatusTab, setReqStatusTab] = useState<"Offered" | "Accepted" | "Assigned" | "Completed">("Offered");
+
+  // ── collection request queries ──
+  const { data: offeredData, isLoading: offeredLoading } = useQuery({
+    queryKey: ["collectionRequests", "Offered"],
+    queryFn: () => collectionRequestService.getAll({ Status: "Offered", PageSize: 50 }),
+  });
+  const { data: acceptedData, isLoading: acceptedLoading } = useQuery({
+    queryKey: ["collectionRequests", "Accepted"],
+    queryFn: () => collectionRequestService.getAll({ Status: "Accepted", PageSize: 50 }),
+  });
+  const { data: assignedData, isLoading: assignedLoading } = useQuery({
+    queryKey: ["collectionRequests", "Assigned"],
+    queryFn: () => collectionRequestService.getAll({ Status: "Assigned", PageSize: 50 }),
+  });
+  const { data: completedData, isLoading: completedLoading } = useQuery({
+    queryKey: ["collectionRequests", "Completed"],
+    queryFn: () => collectionRequestService.getAll({ Status: "Completed", PageSize: 50 }),
+  });
+
+  const offeredCount   = offeredData?.totalCount   ?? 0;
+  const acceptedCount  = acceptedData?.totalCount  ?? 0;
+  const assignedCount  = assignedData?.totalCount  ?? 0;
+  const completedCount = completedData?.totalCount ?? 0;
+
+  // ── collection request mutations ──
+  const acceptReq = useMutation({
+    mutationFn: (id: string) => collectionRequestService.accept(id),
+    onSuccess: () => { toast.success("Đã tiếp nhận yêu cầu"); qc.invalidateQueries({ queryKey: ["collectionRequests"] }); },
+    onError: () => toast.error("Tiếp nhận thất bại"),
+  });
+  const rejectReq = useMutation({
+    mutationFn: (id: string) => collectionRequestService.reject(id),
+    onSuccess: () => { toast.success("Đã từ chối yêu cầu"); qc.invalidateQueries({ queryKey: ["collectionRequests"] }); },
+    onError: () => toast.error("Từ chối thất bại"),
+  });
 
   // ── service area state ──
   const [areaSearch, setAreaSearch]           = useState("");
@@ -185,7 +217,7 @@ const EnterpriseDashboard = () => {
   };
   const submitCap = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!capWasteTypeId) { toast.error("Vui lòng chọn loại rác"); return; }
+    if (capDialog === "add" && !capWasteTypeId) { toast.error("Vui lòng chọn loại rác"); return; }
     if (!capKg || isNaN(parseFloat(capKg)) || parseFloat(capKg) <= 0) {
       toast.error("Vui lòng nhập công suất hợp lệ"); return;
     }
@@ -206,10 +238,10 @@ const EnterpriseDashboard = () => {
       {/* Stats */}
       <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          { icon: Package,      label: "Yêu cầu mới",  value: "2",  color: "bg-eco-light"  },
-          { icon: Truck,        label: "Đang thu gom", value: "1",  color: "bg-eco-medium" },
-          { icon: CheckCircle,  label: "Hoàn thành",   value: "48", color: "bg-eco-teal"   },
-          { icon: Users,        label: "Collectors",   value: "3",  color: "bg-eco-light"  },
+          { icon: Package,      label: "Chờ phản hồi",  value: String(offeredCount),   color: "bg-eco-light"  },
+          { icon: CheckCircle,  label: "Đã tiếp nhận",  value: String(acceptedCount),  color: "bg-eco-medium" },
+          { icon: Truck,        label: "Đang thu gom",  value: String(assignedCount),  color: "bg-eco-teal"   },
+          { icon: BarChart3,    label: "Hoàn thành",    value: String(completedCount), color: "bg-eco-light"  },
         ].map((s, i) => (
           <Card key={i} className="shadow-card">
             <CardContent className="flex items-center gap-4 p-4">
@@ -238,56 +270,181 @@ const EnterpriseDashboard = () => {
 
         {/* ── Tab: Yêu cầu ── */}
         <TabsContent value="requests">
-          <div className="space-y-3">
-            {mockRequests.map((r) => {
-              const st = statusMap[r.status];
-              return (
-                <Card key={r.id} className="shadow-card">
-                  <CardContent className="p-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex-1">
-                        <div className="mb-1 flex items-center gap-2">
-                          <span className="text-sm font-semibold text-foreground">{r.id}</span>
-                          <Badge variant={st.variant}>{st.label}</Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          <span className="font-medium text-foreground">{r.citizen}</span> — {r.wasteType} ({r.weight})
-                        </p>
-                        <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <MapPin className="h-3 w-3" /> {r.address} • {r.date}
-                        </p>
-                        {r.collector && <p className="mt-1 text-xs text-primary">Collector: {r.collector}</p>}
-                      </div>
-                      <div className="flex gap-2">
-                        {r.status === "PENDING" && (
-                          <>
-                            <Button size="sm" onClick={() => handleAccept(r.id)}>
+          <Tabs value={reqStatusTab} onValueChange={(v) => setReqStatusTab(v as typeof reqStatusTab)}>
+            <TabsList className="mb-4 flex-wrap">
+              <TabsTrigger value="Offered" className="gap-1.5">
+                Chờ phản hồi
+                {offeredCount > 0 && <Badge className="h-5 min-w-5 px-1 text-xs">{offeredCount}</Badge>}
+              </TabsTrigger>
+              <TabsTrigger value="Accepted" className="gap-1.5">
+                Đã nhận
+                {acceptedCount > 0 && <Badge variant="outline" className="h-5 min-w-5 px-1 text-xs">{acceptedCount}</Badge>}
+              </TabsTrigger>
+              <TabsTrigger value="Assigned" className="gap-1.5">
+                Đang thu gom
+                {assignedCount > 0 && <Badge variant="outline" className="h-5 min-w-5 px-1 text-xs">{assignedCount}</Badge>}
+              </TabsTrigger>
+              <TabsTrigger value="Completed">Hoàn thành</TabsTrigger>
+            </TabsList>
+
+            {/* Offered */}
+            <TabsContent value="Offered">
+              <div className="space-y-3">
+                {offeredLoading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <Card key={i} className="shadow-card"><CardContent className="space-y-2 p-4"><Skeleton className="h-4 w-1/3" /><Skeleton className="h-4 w-2/3" /></CardContent></Card>
+                  ))
+                ) : (offeredData?.items ?? []).length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
+                    <AlertCircle className="h-10 w-10 opacity-40" />
+                    <p className="text-sm">Không có yêu cầu nào chờ phản hồi</p>
+                  </div>
+                ) : (
+                  (offeredData?.items ?? []).map((r: CollectionRequest) => (
+                    <Card key={r.id} className="shadow-card">
+                      <CardContent className="p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="flex-1 space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono text-xs text-muted-foreground">{r.id.slice(0, 8)}…</span>
+                              {r.wasteTypeName && <Badge variant="secondary" className="text-xs">{r.wasteTypeName}</Badge>}
+                              {r.priorityScore > 0 && <Badge variant="outline" className="text-xs">Ưu tiên: {r.priorityScore}</Badge>}
+                            </div>
+                            {r.note && <p className="text-sm text-muted-foreground">{r.note}</p>}
+                            <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <MapPin className="h-3 w-3" />
+                              {r.latitude != null ? `${r.latitude.toFixed(5)}, ${r.longitude?.toFixed(5)}` : ""}
+                              {r.regionCode ? ` • ${r.regionCode}` : ""}
+                              {" • "}{new Date(r.createdTime).toLocaleDateString("vi-VN")}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 gap-2">
+                            <Button size="sm" disabled={acceptReq.isPending} onClick={() => acceptReq.mutate(r.id)}>
                               <CheckCircle className="mr-1 h-4 w-4" /> Tiếp nhận
                             </Button>
-                            <Button size="sm" variant="outline" onClick={() => handleReject(r.id)}>
+                            <Button size="sm" variant="outline" disabled={rejectReq.isPending} onClick={() => rejectReq.mutate(r.id)}>
                               <XCircle className="mr-1 h-4 w-4" /> Từ chối
                             </Button>
-                          </>
-                        )}
-                        {r.status === "PROCESSING" && (
-                          <Select onValueChange={() => handleAssign(r.id)}>
-                            <SelectTrigger className="w-[160px]">
-                              <SelectValue placeholder="Chọn Collector" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {mockCollectors.filter((c) => c.status === "online").map((c) => (
-                                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+
+            {/* Accepted */}
+            <TabsContent value="Accepted">
+              <div className="space-y-3">
+                {acceptedLoading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <Card key={i} className="shadow-card"><CardContent className="space-y-2 p-4"><Skeleton className="h-4 w-1/3" /><Skeleton className="h-4 w-2/3" /></CardContent></Card>
+                  ))
+                ) : (acceptedData?.items ?? []).length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
+                    <AlertCircle className="h-10 w-10 opacity-40" />
+                    <p className="text-sm">Không có yêu cầu nào đã nhận</p>
+                  </div>
+                ) : (
+                  (acceptedData?.items ?? []).map((r: CollectionRequest) => (
+                    <Card key={r.id} className="shadow-card">
+                      <CardContent className="p-4">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-xs text-muted-foreground">{r.id.slice(0, 8)}…</span>
+                            {r.wasteTypeName && <Badge variant="secondary" className="text-xs">{r.wasteTypeName}</Badge>}
+                            <Badge variant="default" className="text-xs">Đã nhận</Badge>
+                          </div>
+                          {r.note && <p className="text-sm text-muted-foreground">{r.note}</p>}
+                          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <MapPin className="h-3 w-3" />
+                            {r.latitude != null ? `${r.latitude.toFixed(5)}, ${r.longitude?.toFixed(5)}` : ""}
+                            {r.regionCode ? ` • ${r.regionCode}` : ""}
+                            {" • "}{new Date(r.createdTime).toLocaleDateString("vi-VN")}
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+
+            {/* Assigned */}
+            <TabsContent value="Assigned">
+              <div className="space-y-3">
+                {assignedLoading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <Card key={i} className="shadow-card"><CardContent className="space-y-2 p-4"><Skeleton className="h-4 w-1/3" /><Skeleton className="h-4 w-2/3" /></CardContent></Card>
+                  ))
+                ) : (assignedData?.items ?? []).length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
+                    <AlertCircle className="h-10 w-10 opacity-40" />
+                    <p className="text-sm">Không có yêu cầu nào đang thu gom</p>
+                  </div>
+                ) : (
+                  (assignedData?.items ?? []).map((r: CollectionRequest) => (
+                    <Card key={r.id} className="shadow-card">
+                      <CardContent className="p-4">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-xs text-muted-foreground">{r.id.slice(0, 8)}…</span>
+                            {r.wasteTypeName && <Badge variant="secondary" className="text-xs">{r.wasteTypeName}</Badge>}
+                            <Badge variant="outline" className="text-xs">Đang thu gom</Badge>
+                          </div>
+                          {r.note && <p className="text-sm text-muted-foreground">{r.note}</p>}
+                          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <MapPin className="h-3 w-3" />
+                            {r.latitude != null ? `${r.latitude.toFixed(5)}, ${r.longitude?.toFixed(5)}` : ""}
+                            {r.regionCode ? ` • ${r.regionCode}` : ""}
+                            {" • "}{new Date(r.createdTime).toLocaleDateString("vi-VN")}
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+
+            {/* Completed */}
+            <TabsContent value="Completed">
+              <div className="space-y-3">
+                {completedLoading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <Card key={i} className="shadow-card"><CardContent className="space-y-2 p-4"><Skeleton className="h-4 w-1/3" /><Skeleton className="h-4 w-2/3" /></CardContent></Card>
+                  ))
+                ) : (completedData?.items ?? []).length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
+                    <AlertCircle className="h-10 w-10 opacity-40" />
+                    <p className="text-sm">Chưa có yêu cầu nào hoàn thành</p>
+                  </div>
+                ) : (
+                  (completedData?.items ?? []).map((r: CollectionRequest) => (
+                    <Card key={r.id} className="shadow-card">
+                      <CardContent className="p-4">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-xs text-muted-foreground">{r.id.slice(0, 8)}…</span>
+                            {r.wasteTypeName && <Badge variant="secondary" className="text-xs">{r.wasteTypeName}</Badge>}
+                            <Badge className="text-xs">Hoàn thành</Badge>
+                          </div>
+                          {r.note && <p className="text-sm text-muted-foreground">{r.note}</p>}
+                          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <MapPin className="h-3 w-3" />
+                            {r.latitude != null ? `${r.latitude.toFixed(5)}, ${r.longitude?.toFixed(5)}` : ""}
+                            {r.regionCode ? ` • ${r.regionCode}` : ""}
+                            {" • "}{new Date(r.createdTime).toLocaleDateString("vi-VN")}
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
         </TabsContent>
 
         {/* ── Tab: Collectors ── */}
