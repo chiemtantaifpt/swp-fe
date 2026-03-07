@@ -39,8 +39,11 @@ function formatDate(raw: string | undefined): string {
 export default function ReportDetailModal({ report, open, onClose, onCancel, isCancelling }: Props) {
   if (!report) return null;
 
-  const isTerminal = report.status === "REJECTED" || report.status === "CANCELLED";
-  const currentStepIndex = STATUS_ORDER.indexOf(report.status);
+  // Normalize status to match enum
+  const normalizedStatus = report.status.toUpperCase() as WasteReportStatus;
+
+  const isTerminal = normalizedStatus === "REJECTED" || normalizedStatus === "CANCELLED";
+  const currentStepIndex = STATUS_ORDER.indexOf(normalizedStatus);
 
   const mapsUrl = report.latitude && report.longitude
     ? `https://www.google.com/maps?q=${report.latitude},${report.longitude}`
@@ -57,18 +60,24 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
         </DialogHeader>
 
         {/* Ảnh */}
-        {report.imageUrl && (
-          <div className="overflow-hidden rounded-lg border border-border">
-            <img src={report.imageUrl} alt="Ảnh báo cáo" className="h-52 w-full object-cover" />
+        {report.wastes?.some(w => w.imageUrls?.length) && (
+          <div className="space-y-2">
+            {report.wastes.map((waste, wasteIndex) =>
+              waste.imageUrls?.map((url, imgIndex) => (
+                <div key={`${wasteIndex}-${imgIndex}`} className="overflow-hidden rounded-lg border border-border">
+                  <img src={url} alt={`Ảnh loại rác ${waste.wasteTypeName || waste.wasteTypeId}`} className="h-52 w-full object-cover" />
+                </div>
+              ))
+            )}
           </div>
         )}
 
         {/* Trạng thái terminal */}
         {isTerminal ? (
           <div className={`flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium
-            ${report.status === "REJECTED" ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"}`}>
+            ${normalizedStatus === "REJECTED" ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"}`}>
             <XCircle className="h-4 w-4 shrink-0" />
-            {report.status === "REJECTED" ? "Báo cáo đã bị từ chối" : "Báo cáo đã bị hủy"}
+            {normalizedStatus === "REJECTED" ? "Báo cáo đã bị từ chối" : "Báo cáo đã bị hủy"}
           </div>
         ) : (
           /* Timeline tiến trình */
@@ -116,7 +125,18 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             <div>
               <p className="text-xs text-muted-foreground">Loại rác</p>
-              <p className="font-medium">{report.wasteTypeName || report.wasteTypeId || "—"}</p>
+              {report.wastes?.length ? (
+                <ul className="space-y-1">
+                  {report.wastes.map((waste, index) => (
+                    <li key={index} className="font-medium">
+                      {waste.wasteTypeName || waste.wasteTypeId || "—"}
+                      {waste.note && <span className="text-sm text-muted-foreground"> ({waste.note})</span>}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="font-medium">—</p>
+              )}
             </div>
           </div>
 
@@ -179,7 +199,7 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
             <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             <div>
               <p className="text-xs text-muted-foreground">Ngày tạo</p>
-              <p>{formatDate(report.createdAt)}</p>
+              <p>{formatDate(report.createdTime)}</p>
             </div>
           </div>
 
@@ -196,7 +216,7 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
         {/* Actions */}
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" size="sm" onClick={onClose}>Đóng</Button>
-          {report.status === "PENDING" && (
+          {normalizedStatus === "PENDING" && (
             <Button
               variant="destructive"
               size="sm"

@@ -549,11 +549,12 @@ const CitizenDashboard = () => {
               {reports.map((r) => {
                 const st = statusMap[r.status] || { label: r.status, variant: "secondary" as const };
                 // Fix Invalid Date
-                const dateStr = r.createdAt ? (() => {
-                  const d = new Date(r.createdAt);
+                const dateStr = r.createdTime ? (() => {
+                  const d = new Date(r.createdTime);
                   return isNaN(d.getTime()) ? "" : d.toLocaleDateString("vi-VN");
                 })() : "";
-                const displayName = r.wasteTypeName || "Báo cáo rác";
+                const wasteNames = r.wastes?.map(w => w.wasteTypeName || w.wasteTypeId).join(", ") || "Báo cáo rác";
+                const hasImages = r.wastes?.some(w => w.imageUrls?.length);
                 return (
                   <Card
                     key={r.id}
@@ -562,19 +563,29 @@ const CitizenDashboard = () => {
                   >
                     <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                       <div className="flex items-start gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-eco-light text-sm font-bold text-eco-dark">
-                          {displayName.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-foreground">{displayName}</p>
-                          {r.address && <p className="text-xs text-muted-foreground">{r.address}</p>}
+                        {hasImages && r.wastes?.[0]?.imageUrls?.[0] ? (
+                          <img
+                            src={r.wastes[0].imageUrls[0]}
+                            alt="Ảnh báo cáo"
+                            className="h-10 w-10 rounded-lg object-cover border border-border"
+                          />
+                        ) : (
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-eco-light text-sm font-bold text-eco-dark">
+                            <Recycle className="h-5 w-5" />
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-foreground">{wasteNames}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {r.latitude && r.longitude ? `Vị trí: ${r.latitude.toFixed(4)}, ${r.longitude.toFixed(4)}` : "Vị trí chưa xác định"}
+                          </p>
                           {dateStr && <p className="text-xs text-muted-foreground">{dateStr}</p>}
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
                         {r.points != null && r.points > 0 && (
                           <span className="flex items-center gap-1 text-sm font-medium text-primary">
-                            <Star className="h-4 w-4" /> +{r.points} điểm
+                            <Star className="h-4 w-4" /> +{r.points}
                           </span>
                         )}
                         <Badge variant={st.variant}>{st.label}</Badge>

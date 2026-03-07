@@ -10,17 +10,14 @@ export type WasteReportStatus =
 
 export interface WasteReport {
   id: string;
-  wasteTypeId: string;
-  wasteTypeName?: string;
+  citizenId?: string;
   description?: string;
-  address: string;
-  imageUrl?: string;
   latitude?: number;
   longitude?: number;
   status: WasteReportStatus;
+  createdTime: string;
+  wastes: WasteItem[];
   points?: number;
-  createdAt: string;
-  citizenId?: string;
   citizenName?: string;
   collectorId?: string;
   collectorName?: string;
@@ -28,8 +25,9 @@ export interface WasteReport {
 
 export interface WasteItem {
   wasteTypeId: string;
+  wasteTypeName?: string;
   note?: string;
-  images?: string[]; // Cloudinary URLs (upload trước qua /api/Image/upload-multiple)
+  imageUrls?: string[]; // Cloudinary URLs (upload trước qua /api/Image/upload-multiple)
 }
 
 export interface CreateWasteReportRequest {
@@ -48,22 +46,10 @@ export interface WasteReportListParams {
 }
 
 export const wasteReportService = {
-  // POST /api/WasteReport — multipart/form-data
+  // POST /api/WasteReport — application/json
   create: async (data: CreateWasteReportRequest): Promise<WasteReport> => {
-    const formData = new FormData();
-    if (data.description) formData.append("Description", data.description);
-    if (data.latitude != null) formData.append("Latitude", data.latitude.toString());
-    if (data.longitude != null) formData.append("Longitude", data.longitude.toString());
-    // [FromForm] binding yêu cầu indexed fields cho nested collections
-    data.wastes.forEach((w, i) => {
-      formData.append(`Wastes[${i}].WasteTypeId`, w.wasteTypeId);
-      if (w.note) formData.append(`Wastes[${i}].Note`, w.note);
-      w.images?.forEach((url, j) => {
-        formData.append(`Wastes[${i}].Images[${j}]`, url);
-      });
-    });
-    const response = await api.post<WasteReport>("/WasteReport", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
+    const response = await api.post<WasteReport>("/WasteReport", data, {
+      headers: { "Content-Type": "application/json" },
     });
     return response.data;
   },
