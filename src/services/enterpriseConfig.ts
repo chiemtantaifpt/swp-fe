@@ -1,6 +1,16 @@
 import api from "./api";
 
 // ─────────────────────────────────────────────
+// Generic API wrapper
+// ─────────────────────────────────────────────
+interface ApiResponse<T> {
+  data: T;
+  message: string;
+  statusCode: number;
+  code?: string;
+}
+
+// ─────────────────────────────────────────────
 // RecyclingEnterprise
 // ─────────────────────────────────────────────
 export interface RecyclingEnterprise {
@@ -11,10 +21,15 @@ export interface RecyclingEnterprise {
   address: string;
   legalRepresentative: string;
   representativePosition: string;
-  environmentLicenseFileId: string;
+  environmentLicenseFileId: string | null;
   approvalStatus: string;
   operationalStatus: string;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  reviewedByUserId: string | null;
+  rejectionReason: string | null;
   createdTime: string;
+  documents?: EnterpriseDocument[];
 }
 
 export interface EnterpriseDocument {
@@ -42,9 +57,9 @@ export const recyclingEnterpriseService = {
     return res.data;
   },
 
-  getProfile: async (): Promise<RecyclingEnterprise> => {
-    const res = await api.get<RecyclingEnterprise>("/recycling-enterprise/me/profile");
-    return res.data;
+  getProfile: async (): Promise<RecyclingEnterprise | null> => {
+    const res = await api.get<ApiResponse<RecyclingEnterprise | null>>("/recycling-enterprises/me/profile");
+    return res.data.data;
   },
 
   updateProfile: async (body: {
@@ -55,7 +70,41 @@ export const recyclingEnterpriseService = {
     representativePosition: string;
     environmentLicenseFileId: string;
   }): Promise<RecyclingEnterprise> => {
-    const res = await api.post<RecyclingEnterprise>("/recycling-enterprise/me/profile", body);
+    const res = await api.post<ApiResponse<RecyclingEnterprise>>("/recycling-enterprises/me/profile", body);
+    return res.data.data;
+  },
+};
+
+// ─────────────────────────────────────────────
+// District & Ward
+// ─────────────────────────────────────────────
+export interface District {
+  id: string;
+  name: string;
+  code: string;
+  provinceCode: string;
+  createdTime: string;
+}
+
+export interface Ward {
+  id: string;
+  districtId: string;
+  districtName: string;
+  name: string;
+  code: string;
+  createdTime: string;
+}
+
+export const districtService = {
+  getAll: async (params?: { ProvinceCode?: string; Keyword?: string; PageNumber?: number; PageSize?: number }): Promise<PagedResult<District>> => {
+    const res = await api.get<PagedResult<District>>("/District", { params });
+    return res.data;
+  },
+};
+
+export const wardService = {
+  getAll: async (params?: { DistrictId?: string; Keyword?: string; PageNumber?: number; PageSize?: number }): Promise<PagedResult<Ward>> => {
+    const res = await api.get<PagedResult<Ward>>("/Ward", { params });
     return res.data;
   },
 };
@@ -67,13 +116,18 @@ export interface ServiceArea {
   id: string;
   enterpriseId: string;
   enterpriseName?: string;
-  regionCode: string;
+  districtId?: string;
+  districtName?: string;
+  districtCode?: string;
+  wardId?: string;
+  wardName?: string;
+  wardCode?: string;
+  regionCode?: string;
   createdTime: string;
 }
 
 export interface ServiceAreaListParams {
   EnterpriseId?: string;
-  RegionCode?: string;
   PageNumber?: number;
   PageSize?: number;
 }
@@ -96,13 +150,8 @@ export const serviceAreaService = {
     return res.data;
   },
 
-  create: async (body: { enterpriseId: string; regionCode: string }): Promise<ServiceArea> => {
+  create: async (body: { districtId: string; wardId: string }): Promise<ServiceArea> => {
     const res = await api.post<ServiceArea>("/EnterpriseServiceArea", body);
-    return res.data;
-  },
-
-  update: async (id: string, body: { regionCode: string }): Promise<ServiceArea> => {
-    const res = await api.put<ServiceArea>(`/EnterpriseServiceArea/${id}`, body);
     return res.data;
   },
 
@@ -172,11 +221,11 @@ export const enterpriseDocumentsService = {
     const formData = new FormData();
     formData.append("DocumentType", documentType.toString());
     formData.append("File", file);
-    const res = await api.post<EnterpriseDocument>("/recycling-enterprises/me/documents", formData, {
+    const res = await api.post<ApiResponse<EnterpriseDocument>>("/recycling-enterprises/me/documents", formData, {
       headers: {
         "Content-Type": "multipart/form-data",
       },
     });
-    return res.data;
+    return res.data.data;
   },
 };
