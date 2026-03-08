@@ -17,6 +17,15 @@ export interface RecyclingEnterprise {
   createdTime: string;
 }
 
+export interface EnterpriseDocument {
+  id: string;
+  enterpriseId: string;
+  documentType: number;
+  fileName: string;
+  fileUrl: string;
+  uploadedAt: string;
+}
+
 export interface RecyclingEnterpriseListParams {
   PageNumber?: number;
   PageSize?: number;
@@ -24,12 +33,29 @@ export interface RecyclingEnterpriseListParams {
 
 export const recyclingEnterpriseService = {
   getAll: async (params?: RecyclingEnterpriseListParams): Promise<{ totalCount: number; pageNumber: number; pageSize: number; items: RecyclingEnterprise[] }> => {
-    const res = await api.get("/RecyclingEnterprise", { params });
+    const res = await api.get("/recycling-enterprise", { params });
     return res.data;
   },
 
   getById: async (id: string): Promise<RecyclingEnterprise> => {
-    const res = await api.get<RecyclingEnterprise>(`/RecyclingEnterprise/${id}`);
+    const res = await api.get<RecyclingEnterprise>(`/recycling-enterprise/${id}`);
+    return res.data;
+  },
+
+  getProfile: async (): Promise<RecyclingEnterprise> => {
+    const res = await api.get<RecyclingEnterprise>("/recycling-enterprise/me/profile");
+    return res.data;
+  },
+
+  updateProfile: async (body: {
+    name: string;
+    taxCode: string;
+    address: string;
+    legalRepresentative: string;
+    representativePosition: string;
+    environmentLicenseFileId: string;
+  }): Promise<RecyclingEnterprise> => {
+    const res = await api.post<RecyclingEnterprise>("/recycling-enterprise/me/profile", body);
     return res.data;
   },
 };
@@ -130,5 +156,27 @@ export const wasteCapabilityService = {
 
   delete: async (id: string): Promise<void> => {
     await api.delete(`/EnterpriseWasteCapability/${id}`);
+  },
+};
+
+// ─────────────────────────────────────────────
+// EnterpriseDocuments
+// ─────────────────────────────────────────────
+export const enterpriseDocumentsService = {
+  getAll: async (): Promise<EnterpriseDocument[]> => {
+    const res = await api.get<EnterpriseDocument[]>("/recycling-enterprises/me/documents");
+    return res.data;
+  },
+
+  upload: async (documentType: number, file: File): Promise<EnterpriseDocument> => {
+    const formData = new FormData();
+    formData.append("DocumentType", documentType.toString());
+    formData.append("File", file);
+    const res = await api.post<EnterpriseDocument>("/recycling-enterprises/me/documents", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+    return res.data;
   },
 };

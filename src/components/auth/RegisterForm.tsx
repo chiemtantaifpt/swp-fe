@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Eye, EyeOff, Loader2, UserPlus, Building2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth, UserRole } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -16,12 +16,7 @@ type FieldErrors = Partial<
     | "phone"
     | "email"
     | "password"
-    | "confirmPassword"
-    | "enterpriseName"
-    | "taxCode"
-    | "businessAddress"
-    | "legalRepresentative"
-    | "representativePosition",
+    | "confirmPassword",
     string
   >
 >;
@@ -37,13 +32,6 @@ export default function RegisterForm() {
   const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
-
-  // Enterprise-only fields
-  const [enterpriseName, setEnterpriseName] = useState("");
-  const [taxCode, setTaxCode] = useState("");
-  const [businessAddress, setBusinessAddress] = useState("");
-  const [legalRepresentative, setLegalRepresentative] = useState("");
-  const [representativePosition, setRepresentativePosition] = useState("");
 
   const { register } = useAuth();
   const navigate = useNavigate();
@@ -65,13 +53,7 @@ export default function RegisterForm() {
     else if (!/\d/.test(password)) e.password = "Phải chứa ít nhất 1 chữ số";
     if (!confirmPassword) e.confirmPassword = "Vui lòng xác nhận mật khẩu";
     else if (password !== confirmPassword) e.confirmPassword = "Mật khẩu không trùng khớp";
-    if (role === "Enterprise") {
-      if (!enterpriseName.trim()) e.enterpriseName = "Vui lòng nhập tên doanh nghiệp";
-      if (!taxCode.trim()) e.taxCode = "Vui lòng nhập mã số thuế";
-      if (!businessAddress.trim()) e.businessAddress = "Vui lòng nhập địa chỉ";
-      if (!legalRepresentative.trim()) e.legalRepresentative = "Vui lòng nhập người đại diện";
-      if (!representativePosition.trim()) e.representativePosition = "Vui lòng nhập chức vụ đại diện";
-    }
+    // Removed enterprise validation as per requirements
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -82,11 +64,7 @@ export default function RegisterForm() {
 
     setLoading(true);
     try {
-      const enterpriseInfo =
-        role === "Enterprise"
-          ? { enterpriseName, taxCode, address: businessAddress, legalRepresentative, representativePosition }
-          : undefined;
-      await register(name, phone, email, password, role, enterpriseInfo);
+      await register(name, phone, email, password, role);
       toast.success("Đăng ký thành công! Vui lòng đăng nhập.");
       navigate("/login");
     } catch (error) {
@@ -231,90 +209,6 @@ export default function RegisterForm() {
               </SelectContent>
             </Select>
           </div>
-
-          {/* Enterprise fields */}
-          {role === "Enterprise" && (
-            <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-4">
-              <div className="flex items-center gap-2">
-                <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Thông tin doanh nghiệp
-                </p>
-              </div>
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="enterpriseName">Tên doanh nghiệp *</Label>
-                  <Input
-                    id="enterpriseName"
-                    placeholder="Công ty TNHH Tái chế Xanh"
-                    value={enterpriseName}
-                    onChange={(e) => { setEnterpriseName(e.target.value); clearError("enterpriseName"); }}
-                    disabled={loading}
-                    className={errors.enterpriseName ? "border-destructive" : ""}
-                  />
-                  {errors.enterpriseName && (
-                    <p className="text-xs text-destructive">{errors.enterpriseName}</p>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="taxCode">Mã số thuế *</Label>
-                  <Input
-                    id="taxCode"
-                    placeholder="0123456789"
-                    value={taxCode}
-                    onChange={(e) => { setTaxCode(e.target.value); clearError("taxCode"); }}
-                    disabled={loading}
-                    className={errors.taxCode ? "border-destructive" : ""}
-                  />
-                  {errors.taxCode && (
-                    <p className="text-xs text-destructive">{errors.taxCode}</p>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="businessAddress">Địa chỉ *</Label>
-                  <Input
-                    id="businessAddress"
-                    placeholder="Số nhà, đường, quận, thành phố"
-                    value={businessAddress}
-                    onChange={(e) => { setBusinessAddress(e.target.value); clearError("businessAddress"); }}
-                    disabled={loading}
-                    className={errors.businessAddress ? "border-destructive" : ""}
-                  />
-                  {errors.businessAddress && (
-                    <p className="text-xs text-destructive">{errors.businessAddress}</p>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="legalRepresentative">Người đại diện pháp luật *</Label>
-                  <Input
-                    id="legalRepresentative"
-                    placeholder="Nguyễn Văn A"
-                    value={legalRepresentative}
-                    onChange={(e) => { setLegalRepresentative(e.target.value); clearError("legalRepresentative"); }}
-                    disabled={loading}
-                    className={errors.legalRepresentative ? "border-destructive" : ""}
-                  />
-                  {errors.legalRepresentative && (
-                    <p className="text-xs text-destructive">{errors.legalRepresentative}</p>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="representativePosition">Chức vụ người đại diện *</Label>
-                  <Input
-                    id="representativePosition"
-                    placeholder="Giám đốc / Tổng giám đốc..."
-                    value={representativePosition}
-                    onChange={(e) => { setRepresentativePosition(e.target.value); clearError("representativePosition"); }}
-                    disabled={loading}
-                    className={errors.representativePosition ? "border-destructive" : ""}
-                  />
-                  {errors.representativePosition && (
-                    <p className="text-xs text-destructive">{errors.representativePosition}</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Submit */}
           <Button

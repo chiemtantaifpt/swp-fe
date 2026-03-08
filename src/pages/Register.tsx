@@ -17,14 +17,6 @@ const Register = () => {
   const [role, setRole] = useState<UserRole>("Citizen");
   const [loading, setLoading] = useState(false);
 
-  // Enterprise-only fields
-  const [enterpriseName, setEnterpriseName] = useState("");
-  const [taxCode, setTaxCode] = useState("");
-  const [businessAddress, setBusinessAddress] = useState("");
-  const [legalRepresentative, setLegalRepresentative] = useState("");
-  const [representativePosition, setRepresentativePosition] = useState("");
-  const [environmentLicenseFileId] = useState<string | undefined>(undefined);
-
   const { register } = useAuth();
   const navigate = useNavigate();
 
@@ -66,8 +58,7 @@ const Register = () => {
 
     setLoading(true);
     try {
-      const enterpriseInfo = role === "Enterprise" ? { enterpriseName, taxCode, address: businessAddress, legalRepresentative, representativePosition, ...(environmentLicenseFileId ? { environmentLicenseFileId } : {}) } : undefined;
-      await register(name, phone, email, password, role, enterpriseInfo);
+      await register(name, phone, email, password, role);
       toast.success("Đăng ký thành công! Vui lòng đăng nhập.");
       navigate("/login");
     } catch (error) {
@@ -171,74 +162,6 @@ const Register = () => {
             </Select>
           </div>
 
-          {/* Enterprise-only fields */}
-          {role === "Enterprise" && (
-            <div className="space-y-4 rounded-lg border border-border bg-muted/40 p-4">
-              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <span>🏢</span> Thông tin doanh nghiệp
-              </p>
-              <div>
-                <Label htmlFor="enterpriseName">Tên doanh nghiệp *</Label>
-                <Input
-                  id="enterpriseName"
-                  placeholder="Công ty TNHH Tái chế Xanh"
-                  value={enterpriseName}
-                  onChange={e => setEnterpriseName(e.target.value)}
-                  required
-                  className="mt-1"
-                  disabled={loading}
-                />
-              </div>
-              <div>
-                <Label htmlFor="taxCode">Mã số thuế *</Label>
-                <Input
-                  id="taxCode"
-                  placeholder="0123456789"
-                  value={taxCode}
-                  onChange={e => setTaxCode(e.target.value)}
-                  required
-                  className="mt-1"
-                  disabled={loading}
-                />
-              </div>
-              <div>
-                <Label htmlFor="businessAddress">Địa chỉ *</Label>
-                <Input
-                  id="businessAddress"
-                  placeholder="Số nhà, đường, quận, thành phố"
-                  value={businessAddress}
-                  onChange={e => setBusinessAddress(e.target.value)}
-                  required
-                  className="mt-1"
-                  disabled={loading}
-                />
-              </div>
-              <div>
-                <Label htmlFor="legalRepresentative">Người đại diện pháp luật *</Label>
-                <Input
-                  id="legalRepresentative"
-                  placeholder="Nguyễn Văn A"
-                  value={legalRepresentative}
-                  onChange={e => setLegalRepresentative(e.target.value)}
-                  required
-                  className="mt-1"
-                  disabled={loading}
-                />
-              </div>
-              <div>
-                <Label htmlFor="representativePosition">Chức vụ người đại diện *</Label>
-                <Input
-                  id="representativePosition"
-                  placeholder="Giám đốc / Tổng giám đốc..."
-                  value={representativePosition}
-                  onChange={e => setRepresentativePosition(e.target.value)}
-                  required
-                  className="mt-1"
-                  disabled={loading}
-                />
-              </div>
-            </div>
-          )}
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? "Đang xử lý..." : "Đăng ký"}
           </Button>

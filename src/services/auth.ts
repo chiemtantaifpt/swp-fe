@@ -148,8 +148,7 @@ export const authService = {
     phone: string,
     email: string,
     password: string,
-    role: UserRole,
-    enterpriseInfo?: EnterpriseInfo
+    role: UserRole
   ): Promise<AuthResponse> => {
     try {
       const response = await api.post<AuthResponse>("/auth/register", {
@@ -158,7 +157,6 @@ export const authService = {
         email,
         password,
         role,
-        ...(enterpriseInfo ? { enterpriseInfo } : {}),
       });
       return response.data;
     } catch (error) {
