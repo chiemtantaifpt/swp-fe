@@ -1,5 +1,7 @@
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import EnterpriseProfileSetup from "./EnterpriseProfileSetup";
+import EnterprisePendingApproval from "./EnterprisePendingApproval";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,23 +15,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Package, Truck, Users, BarChart3, CheckCircle, XCircle,
   Clock, MapPin, Settings, Plus, Pencil, Trash2, Search,
-  MapPinned, Recycle, AlertCircle,
+  MapPinned, Recycle, AlertCircle, Eye, Image as ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
-import { serviceAreaService, wasteCapabilityService, recyclingEnterpriseService } from "@/services/enterpriseConfig";
+import { serviceAreaService, wasteCapabilityService, recyclingEnterpriseService, districtService, wardService } from "@/services/enterpriseConfig";
 import { wasteTypeService } from "@/services/wasteType";
-import { collectionRequestService, CollectionRequest } from "@/services/collectionRequest";
+import { collectionRequestService, CollectionRequest, collectorService, Collector } from "@/services/collectionRequest";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
-
-
-const mockCollectors = [
-  { id: "C1", name: "Trần Minh Tuấn",    status: "online",  tasks: 3, completed: 42 },
-  { id: "C2", name: "Nguyễn Hữu Phong",  status: "offline", tasks: 0, completed: 35 },
-  { id: "C3", name: "Lê Thị Hoa",        status: "online",  tasks: 1, completed: 28 },
-];
 
 // ─── SkeletonRows ──────────────────────────────────────────────────────────────
 const SkeletonRows = ({ cols, rows = 4 }: { cols: number; rows?: number }) => (
@@ -44,23 +39,71 @@ const SkeletonRows = ({ cols, rows = 4 }: { cols: number; rows?: number }) => (
   </>
 );
 
+// ─── RequestCard (shared) ─────────────────────────────────────────────────────
+const STATUS_BADGE: Record<string, React.ReactNode> = {
+  Offered:   <Badge className="text-xs">Chờ phản hồi</Badge>,
+  Accepted:  <Badge variant="default" className="text-xs">Đã nhận</Badge>,
+  Assigned:  <Badge variant="outline" className="text-xs">Đang thu gom</Badge>,
+  Completed: <Badge className="bg-green-600 text-xs text-white hover:bg-green-700">Hoàn thành</Badge>,
+};
+
+const RequestCard = ({
+  r,
+  onView,
+}: {
+  r: CollectionRequest;
+  onView: (r: CollectionRequest) => void;
+}) => (
+  <Card
+    key={r.id}
+    className="shadow-card cursor-pointer transition-shadow hover:shadow-md"
+    onClick={() => onView(r)}
+  >
+    <CardContent className="p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex-1 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-xs text-muted-foreground">{r.id.slice(0, 8)}…</span>
+            {r.wasteTypeName && <Badge variant="secondary" className="text-xs">{r.wasteTypeName}</Badge>}
+            {STATUS_BADGE[r.status]}
+            {r.priorityScore > 0 && <Badge variant="outline" className="text-xs">Ưu tiên: {r.priorityScore}</Badge>}
+          </div>
+          {r.note && <p className="text-sm text-muted-foreground">{r.note}</p>}
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            <MapPin className="h-3 w-3" />
+            {r.latitude != null ? `${r.latitude.toFixed(5)}, ${r.longitude?.toFixed(5)}` : ""}
+            {r.regionCode ? ` • ${r.regionCode}` : ""}
+            {" • "}{new Date(r.createdTime).toLocaleDateString("vi-VN")}
+          </p>
+        </div>
+        <Button size="sm" variant="ghost" className="shrink-0 text-muted-foreground" onClick={(e) => { e.stopPropagation(); onView(r); }}>
+          <Eye className="mr-1 h-4 w-4" /> Chi tiết
+        </Button>
+      </div>
+    </CardContent>
+  </Card>
+);
+
 // ═══════════════════════════════════════════════════════════════════════════════
 const EnterpriseDashboard = () => {
   const { user } = useAuth();
   const qc = useQueryClient();
 
-  // ── resolve enterpriseId: GET /RecyclingEnterprise → find by userId ──
-  const { data: myEnterprise } = useQuery({
-    queryKey: ["myEnterprise", user?.id],
-    queryFn: async () => {
-      const list = await recyclingEnterpriseService.getAll({ PageSize: 100 });
-      const found = list.items.find((e) => e.userId === user?.id);
-      if (!found) return null;
-      return recyclingEnterpriseService.getById(found.id);
-    },
+  // ── check if enterprise profile exists ──────────────────────────────────────
+  const { data: myProfile, isLoading: profileLoading } = useQuery({
+    queryKey: ["enterpriseProfile"],
+    queryFn: () => recyclingEnterpriseService.getProfile(),
     enabled: !!user?.id,
+    retry: false,
   });
-  const enterpriseId = myEnterprise?.id ?? "";
+
+  // ── resolve enterpriseId from profile (already fetched above) ──
+  const enterpriseId = myProfile?.id ?? "";
+
+  // ── collection request detail dialog ──
+  const [selectedRequest, setSelectedRequest] = useState<CollectionRequest | null>(null);
+  const [rejectReason, setRejectReason]       = useState("");
+  const [rejectDialogId, setRejectDialogId]   = useState<string | null>(null);
 
   // ── inner tab state for requests ──
   const [reqStatusTab, setReqStatusTab] = useState<"Offered" | "Accepted" | "Assigned" | "Completed">("Offered");
@@ -91,20 +134,35 @@ const EnterpriseDashboard = () => {
   // ── collection request mutations ──
   const acceptReq = useMutation({
     mutationFn: (id: string) => collectionRequestService.accept(id),
-    onSuccess: () => { toast.success("Đã tiếp nhận yêu cầu"); qc.invalidateQueries({ queryKey: ["collectionRequests"] }); },
+    onSuccess: () => {
+      toast.success("Đã tiếp nhận yêu cầu");
+      setSelectedRequest(null);
+      qc.invalidateQueries({ queryKey: ["collectionRequests"] });
+    },
     onError: () => toast.error("Tiếp nhận thất bại"),
   });
   const rejectReq = useMutation({
-    mutationFn: (id: string) => collectionRequestService.reject(id),
-    onSuccess: () => { toast.success("Đã từ chối yêu cầu"); qc.invalidateQueries({ queryKey: ["collectionRequests"] }); },
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      collectionRequestService.reject(id, reason),
+    onSuccess: () => {
+      toast.success("Đã từ chối yêu cầu");
+      setSelectedRequest(null); setRejectDialogId(null); setRejectReason("");
+      qc.invalidateQueries({ queryKey: ["collectionRequests"] });
+    },
     onError: () => toast.error("Từ chối thất bại"),
   });
 
+  // ── collector state ──
+  const [collectorDialog, setCollectorDialog] = useState(false);
+  const [colEmail, setColEmail]               = useState("");
+  const [colPassword, setColPassword]         = useState("");
+  const [colFullName, setColFullName]         = useState("");
+
   // ── service area state ──
   const [areaSearch, setAreaSearch]           = useState("");
-  const [areaDialog, setAreaDialog]           = useState<"add" | "edit" | null>(null);
-  const [areaEditId, setAreaEditId]           = useState<string | null>(null);
-  const [areaRegionCode, setAreaRegionCode]   = useState("");
+  const [areaDialog, setAreaDialog]           = useState<"add" | null>(null);
+  const [areaDistrictId, setAreaDistrictId]   = useState("");
+  const [areaWardId, setAreaWardId]           = useState("");
 
   // ── waste capability state ──
   const [capSearch, setCapSearch]             = useState("");
@@ -120,6 +178,21 @@ const EnterpriseDashboard = () => {
     enabled: !!enterpriseId,
   });
 
+  // District + Ward for area dialog
+  const { data: districtsData } = useQuery({
+    queryKey: ["districts"],
+    queryFn: () => districtService.getAll({ PageSize: 100 }),
+    enabled: !!areaDialog,
+  });
+  const districts = districtsData?.items ?? [];
+
+  const { data: wardsData } = useQuery({
+    queryKey: ["wards", areaDistrictId],
+    queryFn: () => wardService.getAll({ DistrictId: areaDistrictId, PageSize: 100 }),
+    enabled: !!areaDistrictId,
+  });
+  const wards = wardsData?.items ?? [];
+
   const { data: capData, isLoading: capLoading } = useQuery({
     queryKey: ["wasteCapabilities", enterpriseId],
     queryFn: () => wasteCapabilityService.getAll({ EnterpriseId: enterpriseId, PageSize: 50 }),
@@ -132,25 +205,39 @@ const EnterpriseDashboard = () => {
   });
   const activeWasteTypes = allWasteTypes.filter((w) => w.isActive !== false);
 
+  // ── collector query & mutation ──
+  const { data: collectors = [], isLoading: collectorsLoading } = useQuery({
+    queryKey: ["myCollectors"],
+    queryFn: () => collectorService.getMyCollectors(),
+  });
+
+  const createCollector = useMutation({
+    mutationFn: () => collectorService.create({ email: colEmail.trim(), password: colPassword, fullName: colFullName.trim() }),
+    onSuccess: () => {
+      toast.success("Đã tạo collector thành công");
+      setCollectorDialog(false); setColEmail(""); setColPassword(""); setColFullName("");
+      qc.invalidateQueries({ queryKey: ["myCollectors"] });
+    },
+    onError: () => toast.error("Tạo collector thất bại"),
+  });
+
+  const submitCollector = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!colFullName.trim()) { toast.error("Vui lòng nhập họ tên"); return; }
+    if (!colEmail.trim()) { toast.error("Vui lòng nhập email"); return; }
+    if (colPassword.length < 6) { toast.error("Mật khẩu phải tối thiểu 6 ký tự"); return; }
+    createCollector.mutate();
+  };
+
   // ─── area mutations ──────────────────────────────────────────────────────────
   const createArea = useMutation({
-    mutationFn: () => serviceAreaService.create({ enterpriseId, regionCode: areaRegionCode.trim() }),
+    mutationFn: () => serviceAreaService.create({ districtId: areaDistrictId, wardId: areaWardId }),
     onSuccess: () => {
       toast.success("Đã thêm khu vực phục vụ");
-      setAreaDialog(null); setAreaRegionCode("");
+      setAreaDialog(null); setAreaDistrictId(""); setAreaWardId("");
       qc.invalidateQueries({ queryKey: ["serviceAreas"] });
     },
     onError: () => toast.error("Thêm khu vực thất bại"),
-  });
-
-  const updateArea = useMutation({
-    mutationFn: () => serviceAreaService.update(areaEditId!, { regionCode: areaRegionCode.trim() }),
-    onSuccess: () => {
-      toast.success("Đã cập nhật khu vực");
-      setAreaDialog(null); setAreaRegionCode(""); setAreaEditId(null);
-      qc.invalidateQueries({ queryKey: ["serviceAreas"] });
-    },
-    onError: () => toast.error("Cập nhật thất bại"),
   });
 
   const deleteArea = useMutation({
@@ -194,17 +281,20 @@ const EnterpriseDashboard = () => {
   });
 
   // ─── derived lists (client-side filter) ─────────────────────────────────────
-  const areas = (areaData?.items ?? []).filter((a) =>
-    a.regionCode.toLowerCase().includes(areaSearch.toLowerCase())
-  );
+  const areas = (areaData?.items ?? []).filter((a) => {
+    const district = a.districtName ?? "";
+    const ward = a.wardName ?? "";
+    return (
+      district.toLowerCase().includes(areaSearch.toLowerCase()) ||
+      ward.toLowerCase().includes(areaSearch.toLowerCase())
+    );
+  });
   const caps = (capData?.items ?? []).filter((c) =>
     (c.wasteTypeName ?? "").toLowerCase().includes(capSearch.toLowerCase())
   );
 
   // ─── open edit dialogs ───────────────────────────────────────────────────────
-  const openEditArea = (id: string, regionCode: string) => {
-    setAreaEditId(id); setAreaRegionCode(regionCode); setAreaDialog("edit");
-  };
+
   const openEditCap = (id: string, kg: number) => {
     setCapEditId(id); setCapKg(String(kg)); setCapDialog("edit");
   };
@@ -212,8 +302,9 @@ const EnterpriseDashboard = () => {
   // ─── submit handlers ─────────────────────────────────────────────────────────
   const submitArea = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!areaRegionCode.trim()) { toast.error("Vui lòng nhập mã khu vực"); return; }
-    areaDialog === "add" ? createArea.mutate() : updateArea.mutate();
+    if (!areaDistrictId) { toast.error("Vui lòng chọn quận/huyện"); return; }
+    if (!areaWardId) { toast.error("Vui lòng chọn phường/xã"); return; }
+    createArea.mutate();
   };
   const submitCap = (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,10 +315,33 @@ const EnterpriseDashboard = () => {
     capDialog === "add" ? createCap.mutate() : updateCap.mutate();
   };
 
-  const areaSubmitting  = createArea.isPending || updateArea.isPending;
+  const areaSubmitting  = createArea.isPending;
   const capSubmitting   = createCap.isPending  || updateCap.isPending;
 
   // ════════════════════════════════════════════════════════════════════════════
+  // Guard: show setup page if profile not yet created
+  if (profileLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <div className="flex flex-col items-center gap-3 text-muted-foreground">
+            <Skeleton className="h-14 w-14 rounded-2xl" />
+            <Skeleton className="h-4 w-48" />
+            <Skeleton className="h-3 w-32" />
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!myProfile) {
+    return <EnterpriseProfileSetup />;
+  }
+
+  if (myProfile.approvalStatus !== "Approved") {
+    return <EnterprisePendingApproval profile={myProfile} />;
+  }
+
   return (
     <DashboardLayout>
       <div className="mb-6">
@@ -301,34 +415,7 @@ const EnterpriseDashboard = () => {
                   </div>
                 ) : (
                   (offeredData?.items ?? []).map((r: CollectionRequest) => (
-                    <Card key={r.id} className="shadow-card">
-                      <CardContent className="p-4">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="flex-1 space-y-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-mono text-xs text-muted-foreground">{r.id.slice(0, 8)}…</span>
-                              {r.wasteTypeName && <Badge variant="secondary" className="text-xs">{r.wasteTypeName}</Badge>}
-                              {r.priorityScore > 0 && <Badge variant="outline" className="text-xs">Ưu tiên: {r.priorityScore}</Badge>}
-                            </div>
-                            {r.note && <p className="text-sm text-muted-foreground">{r.note}</p>}
-                            <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <MapPin className="h-3 w-3" />
-                              {r.latitude != null ? `${r.latitude.toFixed(5)}, ${r.longitude?.toFixed(5)}` : ""}
-                              {r.regionCode ? ` • ${r.regionCode}` : ""}
-                              {" • "}{new Date(r.createdTime).toLocaleDateString("vi-VN")}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 gap-2">
-                            <Button size="sm" disabled={acceptReq.isPending} onClick={() => acceptReq.mutate(r.id)}>
-                              <CheckCircle className="mr-1 h-4 w-4" /> Tiếp nhận
-                            </Button>
-                            <Button size="sm" variant="outline" disabled={rejectReq.isPending} onClick={() => rejectReq.mutate(r.id)}>
-                              <XCircle className="mr-1 h-4 w-4" /> Từ chối
-                            </Button>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <RequestCard key={r.id} r={r} onView={setSelectedRequest} />
                   ))
                 )}
               </div>
@@ -348,24 +435,7 @@ const EnterpriseDashboard = () => {
                   </div>
                 ) : (
                   (acceptedData?.items ?? []).map((r: CollectionRequest) => (
-                    <Card key={r.id} className="shadow-card">
-                      <CardContent className="p-4">
-                        <div className="space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-mono text-xs text-muted-foreground">{r.id.slice(0, 8)}…</span>
-                            {r.wasteTypeName && <Badge variant="secondary" className="text-xs">{r.wasteTypeName}</Badge>}
-                            <Badge variant="default" className="text-xs">Đã nhận</Badge>
-                          </div>
-                          {r.note && <p className="text-sm text-muted-foreground">{r.note}</p>}
-                          <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <MapPin className="h-3 w-3" />
-                            {r.latitude != null ? `${r.latitude.toFixed(5)}, ${r.longitude?.toFixed(5)}` : ""}
-                            {r.regionCode ? ` • ${r.regionCode}` : ""}
-                            {" • "}{new Date(r.createdTime).toLocaleDateString("vi-VN")}
-                          </p>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <RequestCard key={r.id} r={r} onView={setSelectedRequest} />
                   ))
                 )}
               </div>
@@ -385,24 +455,7 @@ const EnterpriseDashboard = () => {
                   </div>
                 ) : (
                   (assignedData?.items ?? []).map((r: CollectionRequest) => (
-                    <Card key={r.id} className="shadow-card">
-                      <CardContent className="p-4">
-                        <div className="space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-mono text-xs text-muted-foreground">{r.id.slice(0, 8)}…</span>
-                            {r.wasteTypeName && <Badge variant="secondary" className="text-xs">{r.wasteTypeName}</Badge>}
-                            <Badge variant="outline" className="text-xs">Đang thu gom</Badge>
-                          </div>
-                          {r.note && <p className="text-sm text-muted-foreground">{r.note}</p>}
-                          <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <MapPin className="h-3 w-3" />
-                            {r.latitude != null ? `${r.latitude.toFixed(5)}, ${r.longitude?.toFixed(5)}` : ""}
-                            {r.regionCode ? ` • ${r.regionCode}` : ""}
-                            {" • "}{new Date(r.createdTime).toLocaleDateString("vi-VN")}
-                          </p>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <RequestCard key={r.id} r={r} onView={setSelectedRequest} />
                   ))
                 )}
               </div>
@@ -422,24 +475,7 @@ const EnterpriseDashboard = () => {
                   </div>
                 ) : (
                   (completedData?.items ?? []).map((r: CollectionRequest) => (
-                    <Card key={r.id} className="shadow-card">
-                      <CardContent className="p-4">
-                        <div className="space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-mono text-xs text-muted-foreground">{r.id.slice(0, 8)}…</span>
-                            {r.wasteTypeName && <Badge variant="secondary" className="text-xs">{r.wasteTypeName}</Badge>}
-                            <Badge className="text-xs">Hoàn thành</Badge>
-                          </div>
-                          {r.note && <p className="text-sm text-muted-foreground">{r.note}</p>}
-                          <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <MapPin className="h-3 w-3" />
-                            {r.latitude != null ? `${r.latitude.toFixed(5)}, ${r.longitude?.toFixed(5)}` : ""}
-                            {r.regionCode ? ` • ${r.regionCode}` : ""}
-                            {" • "}{new Date(r.createdTime).toLocaleDateString("vi-VN")}
-                          </p>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <RequestCard key={r.id} r={r} onView={setSelectedRequest} />
                   ))
                 )}
               </div>
@@ -449,30 +485,59 @@ const EnterpriseDashboard = () => {
 
         {/* ── Tab: Collectors ── */}
         <TabsContent value="collectors">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {mockCollectors.map((c) => (
-              <Card key={c.id} className="shadow-card">
-                <CardContent className="p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <span className="font-medium text-foreground">{c.name}</span>
-                    <Badge variant={c.status === "online" ? "default" : "secondary"}>
-                      {c.status === "online" ? "Sẵn sàng" : "Offline"}
-                    </Badge>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-lg bg-muted p-2 text-center">
-                      <p className="text-xs text-muted-foreground">Đang làm</p>
-                      <p className="font-display text-lg font-bold text-foreground">{c.tasks}</p>
-                    </div>
-                    <div className="rounded-lg bg-muted p-2 text-center">
-                      <p className="text-xs text-muted-foreground">Hoàn thành</p>
-                      <p className="font-display text-lg font-bold text-foreground">{c.completed}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="mb-4 flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">{collectors.length} collector</p>
+            <Button size="sm" onClick={() => setCollectorDialog(true)}>
+              <Plus className="mr-1 h-4 w-4" /> Thêm collector
+            </Button>
           </div>
+
+          {collectorsLoading ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Card key={i} className="shadow-card">
+                  <CardContent className="p-4 space-y-3">
+                    <Skeleton className="h-4 w-1/2" />
+                    <Skeleton className="h-3 w-2/3" />
+                    <Skeleton className="h-8 w-full" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : collectors.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
+              <AlertCircle className="h-10 w-10 opacity-40" />
+              <p className="text-sm">Chưa có collector nào</p>
+              <Button size="sm" variant="outline" onClick={() => setCollectorDialog(true)}>
+                <Plus className="mr-1 h-4 w-4" /> Thêm collector
+              </Button>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {collectors.map((c: Collector) => (
+                <Card key={c.userId} className="shadow-card">
+                  <CardContent className="p-4">
+                    <div className="mb-3 flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-foreground">{c.fullName}</p>
+                        <p className="truncate text-xs text-muted-foreground">{c.email}</p>
+                      </div>
+                      <Badge variant={c.isActive ? "default" : "secondary"} className="shrink-0 text-xs">
+                        {c.isActive ? "Hoạt động" : "Khóa"}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      {c.isProfileCompleted ? (
+                        <Badge variant="outline" className="text-xs text-green-600 border-green-300">Hồ sơ đầy đủ</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">Chưa hoàn thiện hồ sơ</Badge>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         {/* ── Tab: Thống kê ── */}
@@ -541,7 +606,7 @@ const EnterpriseDashboard = () => {
                 </CardTitle>
                 <Button
                   size="sm"
-                  onClick={() => { setAreaRegionCode(""); setAreaEditId(null); setAreaDialog("add"); }}
+                  onClick={() => { setAreaDistrictId(""); setAreaWardId(""); setAreaDialog("add"); }}
                 >
                   <Plus className="mr-1 h-4 w-4" /> Thêm khu vực
                 </Button>
@@ -562,9 +627,10 @@ const EnterpriseDashboard = () => {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Mã khu vực</TableHead>
+                        <TableHead>Quận/Huyện</TableHead>
+                        <TableHead>Phường/Xã</TableHead>
                         <TableHead className="hidden sm:table-cell">Ngày thêm</TableHead>
-                        <TableHead className="w-[80px] text-right">Thao tác</TableHead>
+                        <TableHead className="w-[60px] text-right">Thao tác</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -578,7 +644,7 @@ const EnterpriseDashboard = () => {
                               <p className="text-sm">Chưa có khu vực nào</p>
                               <Button
                                 size="sm" variant="outline"
-                                onClick={() => { setAreaRegionCode(""); setAreaEditId(null); setAreaDialog("add"); }}
+                                onClick={() => { setAreaDistrictId(""); setAreaWardId(""); setAreaDialog("add"); }}
                               >
                                 <Plus className="mr-1 h-4 w-4" /> Thêm khu vực
                               </Button>
@@ -588,20 +654,17 @@ const EnterpriseDashboard = () => {
                       ) : (
                         areas.map((a) => (
                           <TableRow key={a.id}>
-                            <TableCell>
-                              <Badge variant="outline" className="font-mono text-xs">{a.regionCode}</Badge>
+                            <TableCell className="text-sm font-medium">
+                              {a.districtName ?? a.regionCode ?? "—"}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {a.wardName ?? "—"}
                             </TableCell>
                             <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">
                               {new Date(a.createdTime).toLocaleDateString("vi-VN")}
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-1">
-                                <Button
-                                  size="icon" variant="ghost" className="h-7 w-7"
-                                  onClick={() => openEditArea(a.id, a.regionCode)}
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Button>
                                 <Button
                                   size="icon" variant="ghost"
                                   className="h-7 w-7 text-destructive hover:text-destructive"
@@ -726,28 +789,165 @@ const EnterpriseDashboard = () => {
         </TabsContent>
       </Tabs>
 
-      {/* ── Dialog: Add/Edit Service Area ── */}
-      <Dialog open={!!areaDialog} onOpenChange={(o) => { if (!o) { setAreaDialog(null); setAreaRegionCode(""); setAreaEditId(null); } }}>
+      {/* ══ Dialog: Collection Request Detail ══ */}
+      <Dialog open={!!selectedRequest} onOpenChange={(o) => { if (!o) setSelectedRequest(null); }}>
+        {selectedRequest && (
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                Chi tiết yêu cầu thu gom
+                {STATUS_BADGE[selectedRequest.status]}
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4 text-sm">
+              {/* Info rows */}
+              <div className="space-y-2 rounded-lg border p-3">
+                {[
+                  { label: "Mã yêu cầu",  value: selectedRequest.id },
+                  { label: "Loại rác",     value: selectedRequest.wasteTypeName ?? "—" },
+                  { label: "Độ ưu tiên",   value: String(selectedRequest.priorityScore) },
+                  { label: "Mã khu vực",   value: selectedRequest.regionCode ?? "—" },
+                  { label: "Toạ độ",       value: selectedRequest.latitude != null ? `${selectedRequest.latitude.toFixed(6)}, ${selectedRequest.longitude?.toFixed(6)}` : "—" },
+                  { label: "Ngày tạo",     value: new Date(selectedRequest.createdTime).toLocaleString("vi-VN") },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex justify-between gap-4">
+                    <span className="text-muted-foreground">{label}</span>
+                    <span className="max-w-[60%] break-all text-right font-medium text-foreground">{value}</span>
+                  </div>
+                ))}
+                {selectedRequest.note && (
+                  <div className="flex justify-between gap-4 border-t pt-2">
+                    <span className="text-muted-foreground">Ghi chú</span>
+                    <span className="max-w-[60%] text-right text-foreground">{selectedRequest.note}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Images */}
+              {(selectedRequest.imageUrls ?? []).length > 0 && (
+                <div className="space-y-2">
+                  <p className="flex items-center gap-1.5 font-medium text-foreground">
+                    <ImageIcon className="h-4 w-4 text-primary" /> Hình ảnh
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(selectedRequest.imageUrls ?? []).map((url, i) => (
+                      <a key={i} href={url} target="_blank" rel="noreferrer">
+                        <img
+                          src={url}
+                          alt={`Ảnh ${i + 1}`}
+                          className="h-36 w-full rounded-lg border object-cover transition-opacity hover:opacity-80"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Actions — only for Offered */}
+            {selectedRequest.status === "Offered" && (
+              <DialogFooter className="gap-2 sm:gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1 text-destructive hover:text-destructive"
+                  disabled={rejectReq.isPending}
+                  onClick={() => { setRejectDialogId(selectedRequest.id); setRejectReason(""); }}
+                >
+                  <XCircle className="mr-1 h-4 w-4" /> Từ chối
+                </Button>
+                <Button
+                  className="flex-1"
+                  disabled={acceptReq.isPending}
+                  onClick={() => acceptReq.mutate(selectedRequest.id)}
+                >
+                  <CheckCircle className="mr-1 h-4 w-4" />
+                  {acceptReq.isPending ? "Đang xử lý…" : "Tiếp nhận"}
+                </Button>
+              </DialogFooter>
+            )}
+          </DialogContent>
+        )}
+      </Dialog>
+
+      {/* ══ Dialog: Reject Reason ══ */}
+      <Dialog open={!!rejectDialogId} onOpenChange={(o) => { if (!o) { setRejectDialogId(null); setRejectReason(""); } }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>{areaDialog === "add" ? "Thêm khu vực phục vụ" : "Sửa khu vực phục vụ"}</DialogTitle>
+            <DialogTitle>Lý do từ chối</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="rejectReason">Lý do (tuỳ chọn)</Label>
+            <textarea
+              id="rejectReason"
+              rows={3}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              placeholder="Nhập lý do từ chối…"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRejectDialogId(null); setRejectReason(""); }}>Hủy</Button>
+            <Button
+              variant="destructive"
+              disabled={rejectReq.isPending}
+              onClick={() => rejectReq.mutate({ id: rejectDialogId!, reason: rejectReason })}
+            >
+              {rejectReq.isPending ? "Đang xử lý…" : "Xác nhận từ chối"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Dialog: Add Service Area ── */}
+      <Dialog open={!!areaDialog} onOpenChange={(o) => { if (!o) { setAreaDialog(null); setAreaDistrictId(""); setAreaWardId(""); } }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Thêm khu vực phục vụ</DialogTitle>
           </DialogHeader>
           <form onSubmit={submitArea} className="space-y-4">
+            {/* District */}
             <div className="space-y-1.5">
-              <Label htmlFor="regionCode">Mã khu vực <span className="text-destructive">*</span></Label>
-              <Input
-                id="regionCode"
-                placeholder="VD: Q1, HCM-01, DISTRICT-3…"
-                value={areaRegionCode}
-                onChange={(e) => setAreaRegionCode(e.target.value)}
-                autoFocus
-              />
-              <p className="text-xs text-muted-foreground">Mã định danh khu vực địa lý mà doanh nghiệp phục vụ.</p>
+              <Label htmlFor="districtId">Quận / Huyện <span className="text-destructive">*</span></Label>
+              <Select
+                value={areaDistrictId}
+                onValueChange={(v) => { setAreaDistrictId(v); setAreaWardId(""); }}
+              >
+                <SelectTrigger id="districtId">
+                  <SelectValue placeholder="Chọn quận/huyện…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {districts.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+
+            {/* Ward — only enabled after district selected */}
+            <div className="space-y-1.5">
+              <Label htmlFor="wardId">Phường / Xã <span className="text-destructive">*</span></Label>
+              <Select
+                value={areaWardId}
+                onValueChange={setAreaWardId}
+                disabled={!areaDistrictId}
+              >
+                <SelectTrigger id="wardId">
+                  <SelectValue placeholder={areaDistrictId ? "Chọn phường/xã…" : "Chọn quận/huyện trước"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {wards.map((w) => (
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setAreaDialog(null)}>Hủy</Button>
               <Button type="submit" disabled={areaSubmitting}>
-                {areaSubmitting ? "Đang lưu…" : areaDialog === "add" ? "Thêm" : "Cập nhật"}
+                {areaSubmitting ? "Đang lưu…" : "Thêm"}
               </Button>
             </DialogFooter>
           </form>
@@ -793,6 +993,51 @@ const EnterpriseDashboard = () => {
               <Button type="button" variant="outline" onClick={() => setCapDialog(null)}>Hủy</Button>
               <Button type="submit" disabled={capSubmitting}>
                 {capSubmitting ? "Đang lưu…" : capDialog === "add" ? "Thêm" : "Cập nhật"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      {/* ── Dialog: Create Collector ── */}
+      <Dialog open={collectorDialog} onOpenChange={(o) => { if (!o) { setCollectorDialog(false); setColEmail(""); setColPassword(""); setColFullName(""); } }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Thêm collector</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={submitCollector} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="colFullName">Họ tên <span className="text-destructive">*</span></Label>
+              <Input
+                id="colFullName"
+                placeholder="Nguyễn Văn A"
+                value={colFullName}
+                onChange={(e) => setColFullName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="colEmail">Email <span className="text-destructive">*</span></Label>
+              <Input
+                id="colEmail"
+                type="email"
+                placeholder="collector@example.com"
+                value={colEmail}
+                onChange={(e) => setColEmail(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="colPassword">Mật khẩu <span className="text-destructive">*</span></Label>
+              <Input
+                id="colPassword"
+                type="password"
+                placeholder="Tối thiểu 6 ký tự"
+                value={colPassword}
+                onChange={(e) => setColPassword(e.target.value)}
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCollectorDialog(false)}>Hủy</Button>
+              <Button type="submit" disabled={createCollector.isPending}>
+                {createCollector.isPending ? "Đang tạo…" : "Tạo collector"}
               </Button>
             </DialogFooter>
           </form>

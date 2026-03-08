@@ -4,70 +4,63 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Truck, MapPin, Clock, CheckCircle, Camera, Package, Navigation } from "lucide-react";
+import { Truck, MapPin, Clock, CheckCircle, Package, Navigation, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
+import { collectorAssignmentService, CollectorAssignment } from "@/services/collectionRequest";
 
-type TaskStatus = "ASSIGNED" | "ON_THE_WAY" | "ARRIVED" | "COMPLETED";
+// ─── Local status flow (ON_THE_WAY / ARRIVED are client-only states) ──────────
+type LocalStatus = "ASSIGNED" | "ON_THE_WAY" | "ARRIVED" | "COMPLETED";
 
-interface Task {
-  id: string;
-  citizen: string;
-  wasteType: string;
-  address: string;
-  date: string;
-  status: TaskStatus;
-  weight?: string;
-  priority?: "high" | "normal";
-}
-
-const statusFlow: Record<TaskStatus, { label: string; next?: TaskStatus; nextLabel?: string }> = {
-  ASSIGNED: { label: "Đã phân công", next: "ON_THE_WAY", nextLabel: "Bắt đầu đi" },
-  ON_THE_WAY: { label: "Đang di chuyển", next: "ARRIVED", nextLabel: "Đã đến nơi" },
-  ARRIVED: { label: "Đã đến nơi", next: "COMPLETED", nextLabel: "Hoàn tất thu gom" },
-  COMPLETED: { label: "Hoàn thành" },
+const statusFlow: Record<LocalStatus, { label: string; next?: LocalStatus; nextLabel?: string }> = {
+  ASSIGNED:    { label: "Đã phân công",   next: "ON_THE_WAY", nextLabel: "Bắt đầu đi" },
+  ON_THE_WAY:  { label: "Đang di chuyển", next: "ARRIVED",    nextLabel: "Đã đến nơi" },
+  ARRIVED:     { label: "Đã đến nơi",     next: "COMPLETED",  nextLabel: "Hoàn tất thu gom" },
+  COMPLETED:   { label: "Hoàn thành" },
 };
 
-const statusColors: Record<TaskStatus, "default" | "secondary" | "destructive" | "outline"> = {
-  ASSIGNED: "secondary",
+const statusColors: Record<LocalStatus, "default" | "secondary" | "destructive" | "outline"> = {
+  ASSIGNED:   "secondary",
   ON_THE_WAY: "outline",
-  ARRIVED: "default",
-  COMPLETED: "default",
+  ARRIVED:    "default",
+  COMPLETED:  "default",
 };
 
-const initialTasks: Task[] = [
-  { id: "WR-004", citizen: "Phạm Thị D", wasteType: "Nhựa", address: "12 Hai Bà Trưng, Q.1", date: "2025-02-27 09:00", status: "ASSIGNED", weight: "~6kg", priority: "high" },
-  { id: "WR-006", citizen: "Lý Văn F", wasteType: "Giấy/Carton", address: "90 Đồng Khởi, Q.1", date: "2025-02-27 09:30", status: "ASSIGNED", weight: "~10kg" },
-  { id: "WR-007", citizen: "Mai Thị G", wasteType: "Kim loại", address: "34 Nguyễn Thái Bình, Q.1", date: "2025-02-27 10:00", status: "ASSIGNED", weight: "~4kg" },
-];
+const apiToLocal = (apiStatus: string): LocalStatus => {
+  if (apiStatus === "Completed") return "COMPLETED";
+  return "ASSIGNED";
+};
 
-const historyTasks: Task[] = [
-  { id: "WR-001", citizen: "Nguyễn Văn An", wasteType: "Nhựa", address: "123 Nguyễn Huệ, Q.1", date: "2025-02-25", status: "COMPLETED", weight: "5kg" },
-  { id: "WR-005", citizen: "Hoàng Văn E", wasteType: "Thủy tinh", address: "56 Pasteur, Q.1", date: "2025-02-25", status: "COMPLETED", weight: "4kg" },
-];
+const shortId = (uuid: string) => uuid.slice(0, 8).toUpperCase();
 
 const CollectorDashboard = () => {
   const [online, setOnline] = useState(true);
-  const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const [localProgress, setLocalProgress] = useState<Record<string, LocalStatus>>({});
 
-  const handleAdvance = (id: string) => {
-    setTasks(prev =>
-      prev.map(t => {
-        if (t.id !== id) return t;
-        const flow = statusFlow[t.status];
-        if (!flow.next) return t;
-        if (flow.next === "COMPLETED") {
-          toast.success(`Đã hoàn tất thu gom ${id}! Ảnh xác nhận đã lưu.`);
-        } else {
-          toast.info(`Cập nhật trạng thái ${id}: ${statusFlow[flow.next].label}`);
-        }
-        return { ...t, status: flow.next };
-      })
-    );
+  const { data: assignmentData, isLoading } = useQuery({
+    queryKey: ["myAssignments"],
+    queryFn: () => collectorAssignmentService.getMyAssignments({ PageSize: 50 }),
+    refetchInterval: 30_000,
+  });
+
+  const assignments: CollectorAssignment[] = assignmentData?.items ?? [];
+
+  const getStatus = (a: CollectorAssignment): LocalStatus =>
+    localProgress[a.id] ?? apiToLocal(a.status);
+
+  const handleAdvance = (id: string, current: LocalStatus) => {
+    const next = statusFlow[current].next;
+    if (!next) return;
+    setLocalProgress(prev => ({ ...prev, [id]: next }));
+    if (next === "COMPLETED") toast.success(`Đã hoàn tất thu gom ${shortId(id)}!`);
+    else toast.info(`Cập nhật: ${statusFlow[next].label}`);
   };
 
-  const activeTasks = tasks.filter(t => t.status !== "COMPLETED");
-  const completedTasks = [...tasks.filter(t => t.status === "COMPLETED"), ...historyTasks];
+  const activeTasks    = assignments.filter(a => getStatus(a) !== "COMPLETED");
+  const completedTasks = assignments.filter(a => getStatus(a) === "COMPLETED");
+  const totalCount     = assignmentData?.totalCount ?? 0;
 
   return (
     <DashboardLayout>
@@ -87,9 +80,9 @@ const CollectorDashboard = () => {
       {/* Stats */}
       <div className="mb-8 grid gap-4 sm:grid-cols-3">
         {[
-          { icon: Package, label: "Việc hôm nay", value: activeTasks.length.toString(), color: "bg-eco-light" },
-          { icon: CheckCircle, label: "Đã hoàn thành", value: completedTasks.length.toString(), color: "bg-eco-medium" },
-          { icon: Truck, label: "Tổng cộng", value: "44", color: "bg-eco-teal" },
+          { icon: Package,       label: "Việc hôm nay",    value: isLoading ? "…" : activeTasks.length.toString(),    color: "bg-eco-light" },
+          { icon: CheckCircle,   label: "Đã hoàn thành",   value: isLoading ? "…" : completedTasks.length.toString(), color: "bg-eco-medium" },
+          { icon: Truck,         label: "Tổng cộng",       value: isLoading ? "…" : totalCount.toString(),            color: "bg-eco-teal" },
         ].map((s, i) => (
           <Card key={i} className="shadow-card">
             <CardContent className="flex items-center gap-4 p-4">
@@ -107,12 +100,25 @@ const CollectorDashboard = () => {
 
       <Tabs defaultValue="active">
         <TabsList>
-          <TabsTrigger value="active">Việc cần làm ({activeTasks.length})</TabsTrigger>
-          <TabsTrigger value="history">Lịch sử</TabsTrigger>
+          <TabsTrigger value="active">Việc cần làm ({isLoading ? "…" : activeTasks.length})</TabsTrigger>
+          <TabsTrigger value="history">Lịch sử ({isLoading ? "…" : completedTasks.length})</TabsTrigger>
         </TabsList>
 
+        {/* ── Active tab ── */}
         <TabsContent value="active">
-          {!online ? (
+          {isLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Card key={i} className="shadow-card">
+                  <CardContent className="p-4 space-y-2">
+                    <Skeleton className="h-4 w-1/3" />
+                    <Skeleton className="h-3 w-2/3" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : !online ? (
             <Card className="shadow-card">
               <CardContent className="p-8 text-center">
                 <p className="text-muted-foreground">Bạn đang ở chế độ nghỉ. Bật "Sẵn sàng nhận việc" để nhận thông báo mới.</p>
@@ -127,34 +133,36 @@ const CollectorDashboard = () => {
             </Card>
           ) : (
             <div className="space-y-3">
-              {activeTasks.map((t, i) => {
-                const flow = statusFlow[t.status];
+              {activeTasks.map((a, i) => {
+                const status = getStatus(a);
+                const flow = statusFlow[status];
                 return (
-                  <Card key={t.id} className={`shadow-card ${t.priority === "high" ? "border-l-4 border-l-destructive" : ""}`}>
+                  <Card key={a.id} className="shadow-card">
                     <CardContent className="p-4">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex-1">
-                          <div className="mb-1 flex items-center gap-2">
+                          <div className="mb-1 flex flex-wrap items-center gap-2">
                             <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
                               {String(i + 1).padStart(2, "0")}
                             </span>
-                            <span className="text-sm font-semibold text-foreground">{t.id}</span>
-                            <Badge variant={statusColors[t.status]}>{flow.label}</Badge>
-                            {t.priority === "high" && <Badge variant="destructive">Ưu tiên</Badge>}
+                            <span className="font-mono text-sm font-semibold text-foreground">
+                              {shortId(a.requestId)}
+                            </span>
+                            <Badge variant={statusColors[status]}>{flow.label}</Badge>
                           </div>
-                          <p className="text-sm text-foreground">{t.wasteType} — {t.weight}</p>
                           <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <MapPin className="h-3 w-3" /> {t.address}
+                            <Clock className="h-3 w-3" />
+                            {new Date(a.createdTime).toLocaleString("vi-VN")}
                           </p>
-                          <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Clock className="h-3 w-3" /> {t.date}
-                          </p>
+                          {a.collectedNote && (
+                            <p className="mt-1 text-xs text-muted-foreground">Ghi chú: {a.collectedNote}</p>
+                          )}
                         </div>
                         {flow.next && (
-                          <Button size="sm" onClick={() => handleAdvance(t.id)} className="shrink-0">
+                          <Button size="sm" onClick={() => handleAdvance(a.id, status)} className="shrink-0">
                             {flow.next === "ON_THE_WAY" && <Navigation className="mr-1 h-4 w-4" />}
-                            {flow.next === "ARRIVED" && <MapPin className="mr-1 h-4 w-4" />}
-                            {flow.next === "COMPLETED" && <Camera className="mr-1 h-4 w-4" />}
+                            {flow.next === "ARRIVED"    && <MapPin className="mr-1 h-4 w-4" />}
+                            {flow.next === "COMPLETED"  && <CheckCircle className="mr-1 h-4 w-4" />}
                             {flow.nextLabel}
                           </Button>
                         )}
@@ -167,23 +175,42 @@ const CollectorDashboard = () => {
           )}
         </TabsContent>
 
+        {/* ── History tab ── */}
         <TabsContent value="history">
           <Card className="shadow-card">
             <CardHeader>
               <CardTitle className="font-display text-base">Công việc đã hoàn thành</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {completedTasks.map(t => (
-                  <div key={t.id} className="flex items-center justify-between rounded-lg bg-muted/50 p-3">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{t.id} — {t.wasteType} ({t.weight})</p>
-                      <p className="text-xs text-muted-foreground">{t.address} • {t.date}</p>
+              {isLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+                </div>
+              ) : completedTasks.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
+                  <AlertCircle className="h-8 w-8 opacity-40" />
+                  <p className="text-sm">Chưa có công việc hoàn thành</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {completedTasks.map(a => (
+                    <div key={a.id} className="flex items-center justify-between rounded-lg bg-muted/50 p-3">
+                      <div>
+                        <p className="font-mono text-sm font-medium text-foreground">{shortId(a.requestId)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {a.collectedAt
+                            ? new Date(a.collectedAt).toLocaleString("vi-VN")
+                            : new Date(a.createdTime).toLocaleString("vi-VN")}
+                        </p>
+                        {a.collectedNote && (
+                          <p className="text-xs text-muted-foreground">Ghi chú: {a.collectedNote}</p>
+                        )}
+                      </div>
+                      <Badge variant="default">Hoàn thành</Badge>
                     </div>
-                    <Badge variant="default">Hoàn thành</Badge>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

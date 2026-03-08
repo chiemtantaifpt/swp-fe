@@ -36,7 +36,7 @@ interface JwtPayload {
   email?: string;
   "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"?: string;
   "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"?: string;
-  role?: string; // thêm để hỗ trợ BE nào trả role theo key "role"
+  role?: string; 
   exp: number;
 }
 
@@ -148,7 +148,8 @@ export const authService = {
     phone: string,
     email: string,
     password: string,
-    role: UserRole
+    role: UserRole,
+    enterpriseInfo?: EnterpriseInfo
   ): Promise<AuthResponse> => {
     try {
       const response = await api.post<AuthResponse>("/auth/register", {
@@ -157,6 +158,7 @@ export const authService = {
         email,
         password,
         role,
+        ...(enterpriseInfo ? { enterpriseInfo } : {}),
       });
       return response.data;
     } catch (error) {
