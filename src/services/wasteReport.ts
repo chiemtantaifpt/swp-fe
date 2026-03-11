@@ -26,8 +26,10 @@ export interface WasteReport {
 export interface WasteItem {
   wasteTypeId: string;
   wasteTypeName?: string;
+  quantity?: number;    // BE constraint: Quantity > 0
   note?: string;
-  imageUrls?: string[]; // Cloudinary URLs (upload trước qua /api/Image/upload-multiple)
+  imageUrls?: string[]; // Cloudinary URLs — returned by GET response
+  images?: string[];    // Cloudinary URLs — sent in POST body
 }
 
 export interface CreateWasteReportRequest {
