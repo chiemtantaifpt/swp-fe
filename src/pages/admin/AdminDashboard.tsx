@@ -15,6 +15,7 @@ import {
   Plus, Pencil, Trash2, Leaf,
 } from "lucide-react";
 import { toast } from "sonner";
+import { enterpriseApprovalService } from "@/services/enterpriseApproval";
 import { wasteTypeService, WasteType, WASTE_CATEGORIES } from "@/services/wasteType";
 
 const mockUsers = [
@@ -153,6 +154,21 @@ const WasteTypeFormDialog = ({ open, editing, onClose }: WasteTypeFormProps) => 
 };
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
+const formatDate = (raw?: string | null): string => {
+  if (!raw) return "-";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "-";
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+const getReviewerName = (id: string): string => {
+  // TODO: đổi API nếu có map id -> username. Hiện tạm dùng id để tránh trống.
+  return id;
+};
+
 const AdminDashboard = () => {
   const qc = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
@@ -160,6 +176,90 @@ const AdminDashboard = () => {
   const [deleteTarget, setDeleteTarget] = useState<WasteType | null>(null);
   const [filterKeyword, setFilterKeyword] = useState("");
   const [filterCategory, setFilterCategory] = useState<string>("all");
+
+  const {
+    data: enterpriseApprovals,
+    isLoading: enterpriseLoading,
+    isError: enterpriseError,
+  } = useQuery({
+    queryKey: ["enterpriseApprovals"],
+    queryFn: () => enterpriseApprovalService.getAll({ PageNumber: 1, PageSize: 50 }),
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: (enterpriseId: string) => enterpriseApprovalService.approve(enterpriseId),
+    onSuccess: () => {
+      toast.success("Duyệt doanh nghiệp thành công");
+      qc.invalidateQueries({ queryKey: ["enterpriseApprovals"] });
+    },
+    onError: () => toast.error("Duyệt doanh nghiệp thất bại"),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: ({ enterpriseId, reason }: { enterpriseId: string; reason: string }) =>
+      enterpriseApprovalService.reject(enterpriseId, reason),
+    onSuccess: () => {
+      toast.success("Từ chối doanh nghiệp thành công");
+      qc.invalidateQueries({ queryKey: ["enterpriseApprovals"] });
+    },
+    onError: () => toast.error("Từ chối doanh nghiệp thất bại"),
+  });
+
+  const handleApproveEnterprise = (enterpriseId: string) => {
+    approveMutation.mutate(enterpriseId);
+  };
+
+  const openRejectDialog = (enterpriseId: string) => {
+    setRejectEnterpriseId(enterpriseId);
+    setRejectReason("");
+    setRejectDialogOpen(true);
+  };
+
+  const closeRejectDialog = () => {
+    setRejectDialogOpen(false);
+    setRejectEnterpriseId(null);
+    setRejectReason("");
+  };
+
+  const handleConfirmReject = () => {
+    if (!rejectReason.trim()) {
+      toast.error("Vui lòng nhập lý do từ chối");
+      return;
+    }
+    if (!rejectEnterpriseId) return;
+
+    rejectMutation.mutate({ enterpriseId: rejectEnterpriseId, reason: rejectReason.trim() }, {
+      onSuccess: () => {
+        closeRejectDialog();
+      },
+      onError: () => {
+        // Đã có toast lỗi chung
+      }
+    });
+  };
+
+  const [selectedEnterpriseId, setSelectedEnterpriseId] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+
+  const [rejectEnterpriseId, setRejectEnterpriseId] = useState<string | null>(null);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+
+  const { data: selectedEnterprise, isLoading: detailLoading, isError: detailError } = useQuery({
+    queryKey: ["enterpriseApproval", selectedEnterpriseId],
+    queryFn: () => enterpriseApprovalService.getById(selectedEnterpriseId!),
+    enabled: !!selectedEnterpriseId,
+  });
+
+  const openEnterpriseDetail = (enterpriseId: string) => {
+    setSelectedEnterpriseId(enterpriseId);
+    setDetailOpen(true);
+  };
+
+  const closeEnterpriseDetail = () => {
+    setDetailOpen(false);
+    setSelectedEnterpriseId(null);
+  };
 
   const { data: wasteTypes = [], isLoading: wtLoading } = useQuery({
     queryKey: ["wasteTypes"],
@@ -234,6 +334,168 @@ const AdminDashboard = () => {
 
         {/* ── Users Tab ─────────────────────────────────────── */}
         <TabsContent value="users">
+          <Card className="shadow-card mb-4">
+            <CardHeader>
+              <CardTitle className="font-display text-base">Danh sách doanh nghiệp</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {enterpriseLoading ? (
+                <p>Đang tải danh sách doanh nghiệp...</p>
+              ) : enterpriseError ? (
+                <p className="text-destructive">Không thể tải dữ liệu doanh nghiệp</p>
+              ) : (
+                <div className="space-y-2">
+                  {(enterpriseApprovals?.items?.length ?? 0) === 0 ? (
+                    <p>Không có doanh nghiệp.</p>
+                  ) : (
+                    enterpriseApprovals?.items?.map((item) => (
+                      <div key={item.id} className="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-medium">{item.name}</p>
+                          <p className="text-xs text-muted-foreground">MST: {item.taxCode} · {item.address}</p>
+                          <Badge variant={item.approvalStatus === "PendingApproval" ? "outline" : "secondary"}>
+                            {item.approvalStatus}
+                          </Badge>
+                        </div>
+                        <div className="flex gap-2 items-center">
+                          <Button size="sm" variant="outline" onClick={() => openEnterpriseDetail(item.id)}>
+                            Chi tiết
+                          </Button>
+                          {item.approvalStatus === "PendingApproval" ? (
+                            <>
+                              <Button size="sm" onClick={() => handleApproveEnterprise(item.id)} disabled={approveMutation.isPending}>
+                                {approveMutation.isPending ? "Đang xử lý..." : "Duyệt"}
+                              </Button>
+                              <Button size="sm" variant="destructive" onClick={() => openRejectDialog(item.id)} disabled={rejectMutation.isPending}>
+                                {rejectMutation.isPending ? "Đang xử lý..." : "Từ chối"}
+                              </Button>
+                            </>
+                          ) : (
+                            <Badge variant="secondary">Đã xử lý</Badge>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Dialog open={detailOpen} onOpenChange={(open) => { if (!open) closeEnterpriseDetail(); }}>
+            <DialogContent className="max-w-4xl w-[90vw] md:w-[80vw] lg:w-[70vw]">
+              <DialogHeader className="pb-2 border-b border-border">
+                <DialogTitle className="font-display">Chi tiết doanh nghiệp</DialogTitle>
+              </DialogHeader>
+
+              {detailLoading ? (
+                <p>Đang tải chi tiết...</p>
+              ) : detailError ? (
+                <p className="text-destructive">Lỗi khi lấy chi tiết doanh nghiệp</p>
+              ) : selectedEnterprise ? (
+                <div className="space-y-4 py-2">
+                  <div className="grid gap-3 lg:grid-cols-3">
+                    <div className="rounded-lg border border-border p-4 shadow-sm bg-white">
+                      <h3 className="text-sm font-semibold text-foreground mb-2">Thông tin chung</h3>
+                      <div className="space-y-1 text-sm text-foreground">
+                        <p><span className="text-muted-foreground">Tên:</span> {selectedEnterprise.name}</p>
+                        <p><span className="text-muted-foreground">MST:</span> {selectedEnterprise.taxCode}</p>
+                        <p><span className="text-muted-foreground">Địa chỉ:</span> {selectedEnterprise.address}</p>
+                        <p><span className="text-muted-foreground">Giấy phép:</span> {selectedEnterprise.environmentLicenseFileId || "Chưa có"}</p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border p-4 shadow-sm bg-white">
+                      <h3 className="text-sm font-semibold text-foreground mb-2">Trạng thái</h3>
+                      <div className="space-y-2 text-sm text-foreground">
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">Trạng thái phê duyệt:</span>
+                          <Badge variant={selectedEnterprise.approvalStatus === "PendingApproval" ? "outline" : "secondary"}>{selectedEnterprise.approvalStatus}</Badge>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">Trạng thái hoạt động:</span>
+                          <Badge variant="default">{selectedEnterprise.operationalStatus}</Badge>
+                        </div>
+                        <p><span className="text-muted-foreground">Người đại diện:</span> {selectedEnterprise.legalRepresentative}</p>
+                        <p><span className="text-muted-foreground">Chức vụ:</span> {selectedEnterprise.representativePosition}</p>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-border p-4 shadow-sm bg-white">
+                      <h3 className="text-sm font-semibold text-foreground mb-2">Thời gian</h3>
+                      <div className="space-y-1 text-sm text-foreground">
+                        <p><span className="text-muted-foreground">Thời gian nộp:</span> {formatDate(selectedEnterprise.submittedAt)}</p>
+                        <p><span className="text-muted-foreground">Thời gian xem:</span> {formatDate(selectedEnterprise.reviewedAt)}</p>
+                        <p><span className="text-muted-foreground">Thời gian tạo:</span> {formatDate(selectedEnterprise.createdTime)}</p>
+                        <p><span className="text-muted-foreground">Người xét duyệt:</span> {selectedEnterprise.reviewedByUserId ? getReviewerName(selectedEnterprise.reviewedByUserId) : "Chưa có"}</p>
+                        <p><span className="text-muted-foreground">Lý do từ chối:</span> {selectedEnterprise.rejectionReason ?? "Không"}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-border p-4 shadow-sm bg-white">
+                    <h3 className="text-sm font-semibold text-foreground mb-3">Tài liệu</h3>
+                    {selectedEnterprise.documents && selectedEnterprise.documents.length > 0 ? (
+                      <div className="space-y-2">
+                        {selectedEnterprise.documents.map((doc) => (
+                          <div key={doc.id} className="rounded-md border border-border p-3 bg-slate-50">
+                            <p className="font-medium text-sm">{doc.originalFileName}</p>
+                            <div className="mt-1 text-xs text-muted-foreground grid gap-1 sm:grid-cols-2">
+                              <span>Loại: {doc.documentType}</span>
+                              <span>Kích thước: {doc.fileSize.toLocaleString()} bytes</span>
+                              <span>Tải lên: {formatDate(doc.uploadedAt)}</span>
+                              <span>Trạng thái xóa: {doc.isDeleted ? "Đã xóa" : "Hoạt động"}</span>
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <Button size="sm" variant="outline" asChild>
+                                <a href={doc.fileUrl} target="_blank" rel="noreferrer">Xem file</a>
+                              </Button>
+                              <Button size="sm" variant="secondary" asChild>
+                                <a href={doc.fileUrl} target="_blank" rel="noreferrer" download>Tải xuống</a>
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Không có tài liệu.</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p>Chưa có dữ liệu</p>
+              )}
+
+              <DialogFooter>
+                <Button variant="outline" onClick={closeEnterpriseDetail}>Đóng</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={rejectDialogOpen} onOpenChange={(open) => { if (!open) closeRejectDialog(); }}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Yêu cầu từ chối doanh nghiệp</DialogTitle>
+                <p className="text-sm text-muted-foreground">Nhập lý do từ chối và xác nhận.</p>
+              </DialogHeader>
+              <div className="space-y-3 py-2">
+                <Label htmlFor="rejectReason">Lý do</Label>
+                <textarea
+                  id="rejectReason"
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="Nhập lý do từ chối..."
+                  className="w-full rounded-md border border-border p-2 text-sm leading-relaxed focus:border-primary focus:outline-none"
+                  rows={4}
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={closeRejectDialog}>Hủy</Button>
+                <Button onClick={handleConfirmReject} disabled={rejectMutation.isPending}>Xác nhận</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           <Card className="shadow-card">
             <CardHeader>
               <CardTitle className="font-display text-base">Danh sách người dùng</CardTitle>

@@ -34,11 +34,15 @@ export interface RecyclingEnterprise {
 
 export interface EnterpriseDocument {
   id: string;
-  enterpriseId: string;
-  documentType: number;
-  fileName: string;
+  recyclingEnterpriseId: string;
+  documentType: string;
+  originalFileName: string;
+  storedFileName: string;
   fileUrl: string;
+  contentType: string;
+  fileSize: number;
   uploadedAt: string;
+  isDeleted: boolean;
 }
 
 export interface RecyclingEnterpriseListParams {
