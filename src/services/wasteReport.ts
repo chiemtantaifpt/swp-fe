@@ -21,6 +21,7 @@ export interface WasteReport {
   citizenName?: string;
   collectorId?: string;
   collectorName?: string;
+  address?: string;
 }
 
 export interface WasteItem {
@@ -85,4 +86,22 @@ export const wasteReportService = {
   delete: async (id: string): Promise<void> => {
     await api.delete(`/WasteReport/${id}`);
   },
+
+  // GET /api/WasteReport/{reportId}/proof
+  getProof: async (reportId: string): Promise<WasteReportProof | null> => {
+    try {
+      const response = await api.get<WasteReportProof>(`/WasteReport/${reportId}/proof`);
+      return response.data;
+    } catch {
+      return null;
+    }
+  },
 };
+
+export interface WasteReportProof {
+  proofId: string;
+  createdTime: string;
+  notes: string | null;
+  reviewStatus: string;
+  images: string[];
+}

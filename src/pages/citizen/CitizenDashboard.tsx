@@ -55,9 +55,8 @@ const CitizenDashboard = () => {
     };
   }, [imageFiles]);
 
-  // Multi-select waste type state — each entry carries { wasteTypeId, quantity }
-  const [wasteItems, setWasteItems] = useState<Array<{wasteTypeId: string; quantity: number}>>([]);
-  const selectedWasteTypeIds = wasteItems.map((w) => w.wasteTypeId);
+  // Multi-select waste type state
+  const [selectedWasteTypeIds, setSelectedWasteTypeIds] = useState<string[]>([]);
   const [wtSearch, setWtSearch] = useState("");
   const [wtDropdownOpen, setWtDropdownOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
@@ -73,7 +72,7 @@ const CitizenDashboard = () => {
   const resetForm = () => {
     setForm({ description: "", address: "", latitude: undefined, longitude: undefined });
     setImageFiles([]);
-    setWasteItems([]);
+    setSelectedWasteTypeIds([]);
     setWtSearch("");
     setSelectedCategory(null);
     setLocationName(null);
@@ -186,19 +185,11 @@ const CitizenDashboard = () => {
   }, [selectedWasteTypeIds, wasteTypes]);
 
   const toggleWasteType = (id: string) => {
-    setWasteItems((prev) => {
-      if (prev.some((w) => w.wasteTypeId === id)) return prev.filter((w) => w.wasteTypeId !== id);
+    setSelectedWasteTypeIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
       if (prev.length >= 5) { toast.error("Chỉ được chọn tối đa 5 loại rác"); return prev; }
-      return [...prev, { wasteTypeId: id, quantity: 1 }];
+      return [...prev, id];
     });
-  };
-
-  const updateQuantity = (id: string, delta: number) => {
-    setWasteItems((prev) =>
-      prev.map((w) =>
-        w.wasteTypeId === id ? { ...w, quantity: Math.max(1, w.quantity + delta) } : w
-      )
-    );
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -231,10 +222,10 @@ const CitizenDashboard = () => {
       description: form.description || undefined,
       latitude: form.latitude,
       longitude: form.longitude,
-      wastes: wasteItems.map((item) => ({
-        wasteTypeId: item.wasteTypeId,
-        quantity: item.quantity,
-        images: imageUrls.length > 0 ? imageUrls : undefined,
+      wastes: selectedWasteTypeIds.map((id, i) => ({
+        wasteTypeId: id,
+        // Gắn toàn bộ URL ảnh vào waste đầu tiên
+        images: i === 0 ? imageUrls : undefined,
       })),
     });
   };
@@ -425,35 +416,6 @@ const CitizenDashboard = () => {
                       <div className="mt-1.5 flex items-start gap-2 rounded-md border-l-4 border-orange-400 bg-yellow-50 px-3 py-2 text-xs text-yellow-800 dark:bg-yellow-950/30 dark:text-yellow-300">
                         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-500" />
                         <span><span className="font-semibold">Rác nguy hại</span> sẽ được xử lý theo quy trình riêng.</span>
-                      </div>
-                    )}
-
-                    {/* ── Số lượng per loại rác ── */}
-                    {wasteItems.length > 0 && (
-                      <div className="mt-2 space-y-1.5">
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Số lượng (túi / kg / đơn vị)</p>
-                        {wasteItems.map((item) => {
-                          const wt = wasteTypes.find((w) => w.id === item.wasteTypeId);
-                          return (
-                            <div key={item.wasteTypeId} className="flex items-center justify-between rounded-md border border-border bg-background px-3 py-2">
-                              <span className="truncate text-sm font-medium text-foreground">{wt?.name ?? item.wasteTypeId}</span>
-                              <div className="flex shrink-0 items-center gap-2">
-                                <button
-                                  type="button"
-                                  className="flex h-6 w-6 items-center justify-center rounded border border-border bg-muted text-sm font-bold hover:bg-muted/80 disabled:opacity-40"
-                                  onClick={() => updateQuantity(item.wasteTypeId, -1)}
-                                  disabled={item.quantity <= 1}
-                                >−</button>
-                                <span className="w-6 text-center text-sm font-semibold tabular-nums">{item.quantity}</span>
-                                <button
-                                  type="button"
-                                  className="flex h-6 w-6 items-center justify-center rounded border border-border bg-muted text-sm font-bold hover:bg-muted/80"
-                                  onClick={() => updateQuantity(item.wasteTypeId, 1)}
-                                >+</button>
-                              </div>
-                            </div>
-                          );
-                        })}
                       </div>
                     )}
                   </div>
