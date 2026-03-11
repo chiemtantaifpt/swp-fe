@@ -2,11 +2,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   MapPin, Star, User, Truck, Calendar, FileText, AlertTriangle,
-  CheckCircle2, Clock, XCircle, Loader2, ExternalLink,
+  CheckCircle2, Clock, XCircle, Loader2, ExternalLink, PackageCheck,
 } from "lucide-react";
-import { WasteReport } from "@/services/wasteReport";
+import { WasteReport, WasteReportStatus, wasteReportService } from "@/services/wasteReport";
+import { useQuery } from "@tanstack/react-query";
 
 interface Props {
   report: WasteReport | null;
@@ -17,13 +19,21 @@ interface Props {
 }
 
 const STATUS_STEPS = [
-  { key: "PENDING",    label: "Chờ xử lý",     icon: Clock },
-  { key: "PROCESSING", label: "Đã tiếp nhận",   icon: CheckCircle2 },
-  { key: "ASSIGNED",   label: "Đã điều phối",   icon: Truck },
-  { key: "COMPLETED",  label: "Hoàn thành",     icon: Star },
+  { key: "PENDING",    label: "Chờ xử lý",   icon: Clock },
+  { key: "PROCESSING", label: "Đã tiếp nhận",  icon: CheckCircle2 },
+  { key: "ASSIGNED",   label: "Đã điều phối",  icon: Truck },
+  { key: "COLLECTED",  label: "Đã thu gom",   icon: PackageCheck },
+  { key: "COMPLETED",  label: "Hoàn thành",   icon: Star },
 ];
 
-const STATUS_ORDER = ["PENDING", "PROCESSING", "ASSIGNED", "COMPLETED"];
+// Index trong 5-step timeline
+const STEP_INDEX: Record<string, number> = {
+  PENDING: 0,
+  PROCESSING: 1,
+  ASSIGNED: 2,
+  COLLECTED: 3,
+  COMPLETED: 4,
+};
 
 function formatDate(raw: string | undefined): string {
   if (!raw) return "—";
@@ -39,11 +49,25 @@ function formatDate(raw: string | undefined): string {
 export default function ReportDetailModal({ report, open, onClose, onCancel, isCancelling }: Props) {
   if (!report) return null;
 
-  // Normalize status to match enum
   const normalizedStatus = report.status.toUpperCase() as WasteReportStatus;
-
   const isTerminal = normalizedStatus === "REJECTED" || normalizedStatus === "CANCELLED";
-  const currentStepIndex = STATUS_ORDER.indexOf(normalizedStatus);
+
+  // Fetch proof khi report đã ASSIGNED hoặc COMPLETED
+  const needsProof = normalizedStatus === "ASSIGNED" || normalizedStatus === "COMPLETED";
+  const { data: proof, isLoading: proofLoading } = useQuery({
+    queryKey: ["reportProof", report.id],
+    queryFn: () => wasteReportService.getProof(report.id),
+    enabled: open && needsProof,
+    staleTime: 30_000,
+  });
+
+  // Xác định bước hiện tại trong 5-step timeline
+  const currentStepKey = (() => {
+    if (normalizedStatus === "COMPLETED") return "COMPLETED";
+    if (normalizedStatus === "ASSIGNED" && proof) return "COLLECTED";
+    return normalizedStatus; // PENDING | PROCESSING | ASSIGNED
+  })();
+  const currentStepIndex = STEP_INDEX[currentStepKey] ?? 0;
 
   const mapsUrl = report.latitude && report.longitude
     ? `https://www.google.com/maps?q=${report.latitude},${report.longitude}`
@@ -83,36 +107,45 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
           /* Timeline tiến trình */
           <div className="rounded-lg bg-muted/40 p-4">
             <p className="mb-3 text-xs font-medium text-muted-foreground uppercase tracking-wide">Tiến trình</p>
-            <div className="flex items-start gap-0">
-              {STATUS_STEPS.map((step, i) => {
-                const done = currentStepIndex >= i;
-                const active = currentStepIndex === i;
-                const Icon = step.icon;
-                return (
-                  <div key={step.key} className="flex flex-1 flex-col items-center">
-                    {/* Icon + line */}
-                    <div className="flex w-full items-center">
-                      {i > 0 && (
-                        <div className={`h-0.5 flex-1 ${done ? "bg-primary" : "bg-border"}`} />
-                      )}
-                      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 transition-colors
-                        ${active ? "border-primary bg-primary text-primary-foreground"
-                          : done ? "border-primary bg-primary/10 text-primary"
-                          : "border-border bg-background text-muted-foreground"}`}>
-                        <Icon className="h-3.5 w-3.5" />
+            {proofLoading ? (
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-8 w-8 rounded-full" />
+                <Skeleton className="h-1 flex-1" />
+                <Skeleton className="h-8 w-8 rounded-full" />
+                <Skeleton className="h-1 flex-1" />
+                <Skeleton className="h-8 w-8 rounded-full" />
+              </div>
+            ) : (
+              <div className="flex items-start gap-0">
+                {STATUS_STEPS.map((step, i) => {
+                  const done = currentStepIndex >= i;
+                  const active = currentStepIndex === i;
+                  const Icon = step.icon;
+                  return (
+                    <div key={step.key} className="flex flex-1 flex-col items-center">
+                      <div className="flex w-full items-center">
+                        {i > 0 && (
+                          <div className={`h-0.5 flex-1 ${done ? "bg-primary" : "bg-border"}`} />
+                        )}
+                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 transition-colors
+                          ${active ? "border-primary bg-primary text-primary-foreground"
+                            : done ? "border-primary bg-primary/10 text-primary"
+                            : "border-border bg-background text-muted-foreground"}`}>
+                          <Icon className="h-3.5 w-3.5" />
+                        </div>
+                        {i < STATUS_STEPS.length - 1 && (
+                          <div className={`h-0.5 flex-1 ${currentStepIndex > i ? "bg-primary" : "bg-border"}`} />
+                        )}
                       </div>
-                      {i < STATUS_STEPS.length - 1 && (
-                        <div className={`h-0.5 flex-1 ${currentStepIndex > i ? "bg-primary" : "bg-border"}`} />
-                      )}
+                      <p className={`mt-1.5 text-center text-[10px] leading-tight
+                        ${active ? "font-semibold text-primary" : done ? "text-foreground" : "text-muted-foreground"}`}>
+                        {step.label}
+                      </p>
                     </div>
-                    <p className={`mt-1.5 text-center text-[10px] leading-tight
-                      ${active ? "font-semibold text-primary" : done ? "text-foreground" : "text-muted-foreground"}`}>
-                      {step.label}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

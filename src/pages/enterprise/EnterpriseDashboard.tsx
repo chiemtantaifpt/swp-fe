@@ -15,14 +15,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Package, Truck, Users, BarChart3, CheckCircle, XCircle,
   Clock, MapPin, Settings, Plus, Pencil, Trash2, Search,
-  MapPinned, Recycle, AlertCircle, Eye, Image as ImageIcon,
+  MapPinned, Recycle, AlertCircle, Eye, Image as ImageIcon, ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { serviceAreaService, wasteCapabilityService, recyclingEnterpriseService, districtService, wardService } from "@/services/enterpriseConfig";
 import { wasteTypeService } from "@/services/wasteType";
-import { collectionRequestService, CollectionRequest, collectorService, Collector } from "@/services/collectionRequest";
+import { collectionRequestService, collectorAssignmentService, CollectionRequest, collectorService, Collector, collectorProofService, CollectorProof } from "@/services/collectionRequest";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -45,8 +45,67 @@ const STATUS_BADGE: Record<string, React.ReactNode> = {
   Accepted:  <Badge variant="default" className="text-xs">Đã nhận</Badge>,
   Assigned:  <Badge variant="outline" className="text-xs">Đang thu gom</Badge>,
   Completed: <Badge className="bg-green-600 text-xs text-white hover:bg-green-700">Hoàn thành</Badge>,
+  Rejected:  <Badge variant="destructive" className="text-xs">Đã từ chối</Badge>,
 };
 
+// ─── ProofCard ───────────────────────────────────────────────────────────────
+const PROOF_STATUS_BADGE: Record<string, React.ReactNode> = {
+  Pending:  <Badge variant="outline" className="text-xs border-amber-300 text-amber-600">Chờ duyệt</Badge>,
+  Approved: <Badge className="bg-green-600 text-xs text-white hover:bg-green-700">Đã duyệt</Badge>,
+  Rejected: <Badge variant="destructive" className="text-xs">Từ chối</Badge>,
+};
+
+const ProofCard = ({
+  p,
+  onView,
+}: {
+  p: CollectorProof;
+  onView: (p: CollectorProof) => void;
+}) => (
+  <Card
+    className="shadow-card cursor-pointer transition-shadow hover:shadow-md"
+    onClick={() => onView(p)}
+  >
+    <CardContent className="p-4">
+      <div className="flex gap-3">
+        {p.imageUrl ? (
+          <img
+            src={p.imageUrl}
+            alt="Proof"
+            className="h-20 w-20 shrink-0 rounded-lg border object-cover"
+          />
+        ) : (
+          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg border bg-muted">
+            <ImageIcon className="h-8 w-8 text-muted-foreground/40" />
+          </div>
+        )}
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-xs text-muted-foreground">{p.assignmentId.slice(0, 8)}…</span>
+            {p.wasteTypeName && <Badge variant="secondary" className="text-xs">{p.wasteTypeName}</Badge>}
+            {PROOF_STATUS_BADGE[p.reviewStatus]}
+          </div>
+          {p.note && <p className="line-clamp-1 text-sm text-muted-foreground">{p.note}</p>}
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            <MapPin className="h-3 w-3" />
+            {p.regionCode ?? "—"}
+            {p.collectedAt ? ` • ${new Date(p.collectedAt).toLocaleDateString("vi-VN")}` : ""}
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="shrink-0 self-center text-muted-foreground"
+          onClick={(e) => { e.stopPropagation(); onView(p); }}
+        >
+          <Eye className="mr-1 h-4 w-4" /> Xem
+        </Button>
+      </div>
+    </CardContent>
+  </Card>
+);
+
+// ─── RequestCard ──────────────────────────────────────────────────────────────
 const RequestCard = ({
   r,
   onView,
@@ -108,6 +167,11 @@ const EnterpriseDashboard = () => {
   // ── inner tab state for requests ──
   const [reqStatusTab, setReqStatusTab] = useState<"Offered" | "Accepted" | "Assigned" | "Completed">("Offered");
 
+  // ── proof review state ──
+  const [proofReviewTab, setProofReviewTab] = useState<"Pending" | "Approved" | "Rejected">("Pending");
+  const [selectedProof, setSelectedProof] = useState<CollectorProof | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
+
   // ── collection request queries ──
   const { data: offeredData, isLoading: offeredLoading } = useQuery({
     queryKey: ["collectionRequests", "Offered"],
@@ -131,6 +195,21 @@ const EnterpriseDashboard = () => {
   const assignedCount  = assignedData?.totalCount  ?? 0;
   const completedCount = completedData?.totalCount ?? 0;
 
+  // ── collector proof queries (enterprise) ──
+  const { data: pendingProofsData,  isLoading: pendingProofsLoading  } = useQuery({
+    queryKey: ["collectorProofs", "Pending"],
+    queryFn:  () => collectorProofService.getForEnterprise({ reviewStatus: "Pending",  pageSize: 50 }),
+  });
+  const { data: approvedProofsData, isLoading: approvedProofsLoading } = useQuery({
+    queryKey: ["collectorProofs", "Approved"],
+    queryFn:  () => collectorProofService.getForEnterprise({ reviewStatus: "Approved", pageSize: 50 }),
+  });
+  const { data: rejectedProofsData, isLoading: rejectedProofsLoading } = useQuery({
+    queryKey: ["collectorProofs", "Rejected"],
+    queryFn:  () => collectorProofService.getForEnterprise({ reviewStatus: "Rejected", pageSize: 50 }),
+  });
+  const pendingProofsCount = pendingProofsData?.totalCount ?? 0;
+
   // ── collection request mutations ──
   const acceptReq = useMutation({
     mutationFn: (id: string) => collectionRequestService.accept(id),
@@ -150,6 +229,36 @@ const EnterpriseDashboard = () => {
       qc.invalidateQueries({ queryKey: ["collectionRequests"] });
     },
     onError: () => toast.error("Từ chối thất bại"),
+  });
+
+  // ── assign collector state ──
+  const [assignCollectorId, setAssignCollectorId] = useState("");
+
+  const assignCollector = useMutation({
+    mutationFn: ({ requestId, collectorId }: { requestId: string; collectorId: string }) =>
+      collectorAssignmentService.create(requestId, collectorId),
+    onSuccess: () => {
+      toast.success("Đã gán collector thành công");
+      setSelectedRequest(null);
+      setAssignCollectorId("");
+      qc.invalidateQueries({ queryKey: ["collectionRequests"] });
+    },
+    onError: () => toast.error("Gán collector thất bại"),
+  });
+
+  // ── review proof mutation ──
+  const reviewProof = useMutation({
+    mutationFn: ({ id, status, note }: { id: string; status: "Approved" | "Rejected"; note: string }) =>
+      collectorProofService.review(id, status, note),
+    onSuccess: (_, variables) => {
+      toast.success(variables.status === "Approved" ? "Đã duyệt proof thành công" : "Đã từ chối proof");
+      setSelectedProof(null);
+      setReviewNote("");
+      qc.invalidateQueries({ queryKey: ["collectorProofs"] });
+      // Approving a proof marks the request as Completed, so refresh requests too
+      qc.invalidateQueries({ queryKey: ["collectionRequests"] });
+    },
+    onError: () => toast.error("Thao tác thất bại, vui lòng thử lại"),
   });
 
   // ── collector state ──
@@ -374,6 +483,13 @@ const EnterpriseDashboard = () => {
       <Tabs defaultValue="requests">
         <TabsList>
           <TabsTrigger value="requests">Yêu cầu thu gom</TabsTrigger>
+          <TabsTrigger value="proofs" className="gap-1.5">
+            <ShieldCheck className="h-4 w-4" />
+            Duyệt Proof
+            {pendingProofsCount > 0 && (
+              <Badge className="h-5 min-w-5 bg-destructive px-1 text-xs">{pendingProofsCount}</Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="collectors">Collectors</TabsTrigger>
           <TabsTrigger value="stats">Thống kê</TabsTrigger>
           <TabsTrigger value="config" className="gap-1.5">
@@ -476,6 +592,107 @@ const EnterpriseDashboard = () => {
                 ) : (
                   (completedData?.items ?? []).map((r: CollectionRequest) => (
                     <RequestCard key={r.id} r={r} onView={setSelectedRequest} />
+                  ))
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
+        </TabsContent>
+
+        {/* ══ Tab: Duyệt Proof ══ */}
+        <TabsContent value="proofs">
+          <Tabs value={proofReviewTab} onValueChange={(v) => setProofReviewTab(v as typeof proofReviewTab)}>
+            <TabsList className="mb-4">
+              <TabsTrigger value="Pending" className="gap-1.5">
+                Chờ duyệt
+                {pendingProofsCount > 0 && (
+                  <Badge className="h-5 min-w-5 px-1 text-xs">{pendingProofsCount}</Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="Approved">Đã duyệt</TabsTrigger>
+              <TabsTrigger value="Rejected">Từ chối</TabsTrigger>
+            </TabsList>
+
+            {/* Pending proofs */}
+            <TabsContent value="Pending">
+              <div className="space-y-3">
+                {pendingProofsLoading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <Card key={i} className="shadow-card">
+                      <CardContent className="flex gap-3 p-4">
+                        <Skeleton className="h-20 w-20 shrink-0 rounded-lg" />
+                        <div className="flex-1 space-y-2 py-1">
+                          <Skeleton className="h-4 w-1/3" />
+                          <Skeleton className="h-3 w-2/3" />
+                          <Skeleton className="h-3 w-1/2" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                ) : (pendingProofsData?.items ?? []).length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
+                    <AlertCircle className="h-10 w-10 opacity-40" />
+                    <p className="text-sm">Không có proof nào chờ duyệt</p>
+                  </div>
+                ) : (
+                  (pendingProofsData?.items ?? []).map((p: CollectorProof) => (
+                    <ProofCard key={p.id} p={p} onView={setSelectedProof} />
+                  ))
+                )}
+              </div>
+            </TabsContent>
+
+            {/* Approved proofs */}
+            <TabsContent value="Approved">
+              <div className="space-y-3">
+                {approvedProofsLoading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <Card key={i} className="shadow-card">
+                      <CardContent className="flex gap-3 p-4">
+                        <Skeleton className="h-20 w-20 shrink-0 rounded-lg" />
+                        <div className="flex-1 space-y-2 py-1">
+                          <Skeleton className="h-4 w-1/3" />
+                          <Skeleton className="h-3 w-2/3" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                ) : (approvedProofsData?.items ?? []).length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
+                    <AlertCircle className="h-10 w-10 opacity-40" />
+                    <p className="text-sm">Chưa có proof nào được duyệt</p>
+                  </div>
+                ) : (
+                  (approvedProofsData?.items ?? []).map((p: CollectorProof) => (
+                    <ProofCard key={p.id} p={p} onView={setSelectedProof} />
+                  ))
+                )}
+              </div>
+            </TabsContent>
+
+            {/* Rejected proofs */}
+            <TabsContent value="Rejected">
+              <div className="space-y-3">
+                {rejectedProofsLoading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <Card key={i} className="shadow-card">
+                      <CardContent className="flex gap-3 p-4">
+                        <Skeleton className="h-20 w-20 shrink-0 rounded-lg" />
+                        <div className="flex-1 space-y-2 py-1">
+                          <Skeleton className="h-4 w-1/3" />
+                          <Skeleton className="h-3 w-2/3" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                ) : (rejectedProofsData?.items ?? []).length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
+                    <AlertCircle className="h-10 w-10 opacity-40" />
+                    <p className="text-sm">Chưa có proof nào bị từ chối</p>
+                  </div>
+                ) : (
+                  (rejectedProofsData?.items ?? []).map((p: CollectorProof) => (
+                    <ProofCard key={p.id} p={p} onView={setSelectedProof} />
                   ))
                 )}
               </div>
@@ -822,6 +1039,18 @@ const EnterpriseDashboard = () => {
                     <span className="max-w-[60%] text-right text-foreground">{selectedRequest.note}</span>
                   </div>
                 )}
+                {selectedRequest.rejectReasonName && (
+                  <div className="flex justify-between gap-4 border-t pt-2">
+                    <span className="text-muted-foreground">Lý do từ chối</span>
+                    <span className="max-w-[60%] text-right text-destructive font-medium">{selectedRequest.rejectReasonName}</span>
+                  </div>
+                )}
+                {selectedRequest.rejectNote && (
+                  <div className="flex justify-between gap-4">
+                    <span className="text-muted-foreground">Ghi chú từ chối</span>
+                    <span className="max-w-[60%] text-right text-foreground">{selectedRequest.rejectNote}</span>
+                  </div>
+                )}
               </div>
 
               {/* Images */}
@@ -844,6 +1073,34 @@ const EnterpriseDashboard = () => {
                 </div>
               )}
             </div>
+
+            {/* Actions — only for Accepted: assign collector */}
+            {selectedRequest.status === "Accepted" && (
+              <div className="space-y-2">
+                <Label>Gán Collector</Label>
+                <div className="flex gap-2">
+                  <Select value={assignCollectorId} onValueChange={setAssignCollectorId}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Chọn collector…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {collectors.filter((c: Collector) => c.isActive).map((c: Collector) => (
+                        <SelectItem key={c.userId} value={c.userId}>
+                          {c.fullName} — {c.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    disabled={!assignCollectorId || assignCollector.isPending}
+                    onClick={() => assignCollector.mutate({ requestId: selectedRequest.id, collectorId: assignCollectorId })}
+                  >
+                    <Truck className="mr-1 h-4 w-4" />
+                    {assignCollector.isPending ? "Đang gán…" : "Gán"}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {/* Actions — only for Offered */}
             {selectedRequest.status === "Offered" && (
@@ -1042,6 +1299,100 @@ const EnterpriseDashboard = () => {
             </DialogFooter>
           </form>
         </DialogContent>
+      </Dialog>
+      {/* ══ Dialog: Proof Detail / Review ══ */}
+      <Dialog open={!!selectedProof} onOpenChange={(o) => { if (!o) { setSelectedProof(null); setReviewNote(""); } }}>
+        {selectedProof && (
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-primary" />
+                Bằng chứng thu gom
+                {PROOF_STATUS_BADGE[selectedProof.reviewStatus]}
+              </DialogTitle>
+            </DialogHeader>
+
+            {/* Proof image */}
+            {selectedProof.imageUrl ? (
+              <a href={selectedProof.imageUrl} target="_blank" rel="noreferrer" className="block">
+                <img
+                  src={selectedProof.imageUrl}
+                  alt="Proof"
+                  className="max-h-72 w-full rounded-lg border object-cover transition-opacity hover:opacity-90"
+                />
+              </a>
+            ) : (
+              <div className="flex h-40 w-full items-center justify-center rounded-lg border bg-muted">
+                <ImageIcon className="h-12 w-12 text-muted-foreground/30" />
+              </div>
+            )}
+
+            {/* Details */}
+            <div className="space-y-2 rounded-lg border p-3 text-sm">
+              {[
+                { label: "Mã giao việc",      value: selectedProof.assignmentId },
+                { label: "Loại rác",           value: selectedProof.wasteTypeName ?? "—" },
+                { label: "Khu vực",            value: selectedProof.regionCode ?? "—" },
+                { label: "Thời gian thu gom",  value: selectedProof.collectedAt ? new Date(selectedProof.collectedAt).toLocaleString("vi-VN") : "—" },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">{label}</span>
+                  <span className="max-w-[60%] break-all text-right font-medium text-foreground">{value}</span>
+                </div>
+              ))}
+              {selectedProof.note && (
+                <div className="flex justify-between gap-4 border-t pt-2">
+                  <span className="text-muted-foreground">Ghi chú collector</span>
+                  <span className="max-w-[60%] text-right text-foreground">{selectedProof.note}</span>
+                </div>
+              )}
+              {selectedProof.reviewNote && selectedProof.reviewStatus !== "Pending" && (
+                <div className="flex justify-between gap-4 border-t pt-2">
+                  <span className="text-muted-foreground">Nhận xét duyệt</span>
+                  <span className={`max-w-[60%] text-right font-medium ${selectedProof.reviewStatus === "Rejected" ? "text-destructive" : "text-green-600"}`}>
+                    {selectedProof.reviewNote}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Review actions — only available when Pending */}
+            {selectedProof.reviewStatus === "Pending" && (
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="reviewNote">Nhận xét (tuỳ chọn)</Label>
+                  <textarea
+                    id="reviewNote"
+                    rows={3}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    placeholder="Nhập nhận xét hoặc lý do từ chối…"
+                    value={reviewNote}
+                    onChange={(e) => setReviewNote(e.target.value)}
+                  />
+                </div>
+                <DialogFooter className="gap-2 sm:gap-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1 text-destructive hover:text-destructive"
+                    disabled={reviewProof.isPending}
+                    onClick={() => reviewProof.mutate({ id: selectedProof.id, status: "Rejected", note: reviewNote })}
+                  >
+                    <XCircle className="mr-1 h-4 w-4" />
+                    {reviewProof.isPending ? "Đang xử lý…" : "Từ chối"}
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    disabled={reviewProof.isPending}
+                    onClick={() => reviewProof.mutate({ id: selectedProof.id, status: "Approved", note: reviewNote })}
+                  >
+                    <CheckCircle className="mr-1 h-4 w-4" />
+                    {reviewProof.isPending ? "Đang xử lý…" : "Duyệt"}
+                  </Button>
+                </DialogFooter>
+              </div>
+            )}
+          </DialogContent>
+        )}
       </Dialog>
     </DashboardLayout>
   );
