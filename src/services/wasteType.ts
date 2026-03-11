@@ -46,15 +46,30 @@ export interface UpdateWasteTypeRequest {
   isActive: boolean;
 }
 
+const CATEGORY_NAME_TO_NUM: Record<string, number> = {
+  Organic: 0,
+  Recyclable: 1,
+  Hazardous: 2,
+  Other: 3,
+};
+
+function normalizeWasteType(w: WasteType): WasteType {
+  if (typeof w.category === "string") {
+    return { ...w, category: CATEGORY_NAME_TO_NUM[w.category as string] ?? 3 };
+  }
+  return w;
+}
+
 export const wasteTypeService = {
   // GET /api/WasteType
   getAll: async (params?: WasteTypeListParams): Promise<WasteType[]> => {
     const response = await api.get("/WasteType", { params });
     const data = response.data;
-    if (Array.isArray(data)) return data;
-    if (Array.isArray(data?.items)) return data.items;
-    if (Array.isArray(data?.data)) return data.data;
-    return [];
+    let items: WasteType[] = [];
+    if (Array.isArray(data)) items = data;
+    else if (Array.isArray(data?.items)) items = data.items;
+    else if (Array.isArray(data?.data)) items = data.data;
+    return items.map(normalizeWasteType);
   },
 
   // GET /api/WasteType/{id}
