@@ -56,8 +56,12 @@ export const collectionRequestService = {
     await api.post("/CollectionRequest/accept", { requestId: id });
   },
 
-  reject: async (id: string, reason?: string): Promise<void> => {
-    await api.post("/CollectionRequest/reject", { requestId: id, reason: reason ?? "" });
+  reject: async (id: string, reason: string): Promise<void> => {
+    await api.post("/CollectionRequest/reject", {
+      requestId: id,
+      reason,
+      note: null,
+    });
   },
 
   assign: async (id: string, collectorId: string): Promise<void> => {

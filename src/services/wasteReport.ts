@@ -1,12 +1,15 @@
 import api from "./api";
 
 export type WasteReportStatus =
-  | "PENDING"
-  | "PROCESSING"
-  | "ASSIGNED"
-  | "COMPLETED"
-  | "REJECTED"
-  | "CANCELLED";
+  | "Pending"
+  | "Accepted"
+  | "Assigned"
+  | "OnTheWay"
+  | "Collected"
+  | "Verified"
+  | "Rejected"
+  | "Disputed"
+  | "NoEnterpriseAvailable";
 
 export interface WasteReport {
   id: string;
@@ -76,7 +79,7 @@ export const wasteReportService = {
     return response.data;
   },
 
-  // PUT /api/WasteReport/{id} — Cập nhật báo cáo (Enterprise accept/reject, Collector update status)
+  // PUT /api/WasteReport/{id} — Cập nhật báo cáo chung
   update: async (id: string, data: Partial<WasteReport>): Promise<WasteReport> => {
     const response = await api.put<WasteReport>(`/WasteReport/${id}`, data);
     return response.data;

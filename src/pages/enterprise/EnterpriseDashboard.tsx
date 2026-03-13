@@ -228,7 +228,14 @@ const EnterpriseDashboard = () => {
       setSelectedRequest(null); setRejectDialogId(null); setRejectReason("");
       qc.invalidateQueries({ queryKey: ["collectionRequests"] });
     },
-    onError: () => toast.error("Từ chối thất bại"),
+    onError: (err: unknown) => {
+      let msg = "Từ chối thất bại";
+      if (err && typeof err === "object" && err !== null) {
+        const errObj = err as { response?: { data?: { message?: string } }; message?: string };
+        msg = errObj.response?.data?.message || errObj.message || msg;
+      }
+      toast.error(msg);
+    },
   });
 
   // ── assign collector state ──
@@ -421,7 +428,11 @@ const EnterpriseDashboard = () => {
     if (!capKg || isNaN(parseFloat(capKg)) || parseFloat(capKg) <= 0) {
       toast.error("Vui lòng nhập công suất hợp lệ"); return;
     }
-    capDialog === "add" ? createCap.mutate() : updateCap.mutate();
+    if (capDialog === "add") {
+      createCap.mutate();
+    } else {
+      updateCap.mutate();
+    }
   };
 
   const areaSubmitting  = createArea.isPending;
@@ -1134,22 +1145,32 @@ const EnterpriseDashboard = () => {
             <DialogTitle>Lý do từ chối</DialogTitle>
           </DialogHeader>
           <div className="space-y-1.5">
-            <Label htmlFor="rejectReason">Lý do (tuỳ chọn)</Label>
-            <textarea
-              id="rejectReason"
-              rows={3}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              placeholder="Nhập lý do từ chối…"
-              value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
-            />
+            <Label htmlFor="rejectReason">Lý do <span className="text-destructive">*</span></Label>
+            <Select value={rejectReason} onValueChange={setRejectReason}>
+              <SelectTrigger id="rejectReason" className="w-full">
+                <SelectValue placeholder="Chọn lý do từ chối…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="CapacityFull">Capacity Full</SelectItem>
+                <SelectItem value="OutOfServiceArea">Out of Service Area</SelectItem>
+                <SelectItem value="WrongWasteType">Wrong Waste Type</SelectItem>
+                <SelectItem value="ImageNotClear">Image Not Clear</SelectItem>
+                <SelectItem value="Other">Other</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setRejectDialogId(null); setRejectReason(""); }}>Hủy</Button>
             <Button
               variant="destructive"
-              disabled={rejectReq.isPending}
-              onClick={() => rejectReq.mutate({ id: rejectDialogId!, reason: rejectReason })}
+              disabled={rejectReq.isPending || !rejectReason}
+              onClick={() => {
+                if (!rejectReason) {
+                  toast.error("Vui lòng chọn lý do từ chối");
+                  return;
+                }
+                rejectReq.mutate({ id: rejectDialogId!, reason: rejectReason });
+              }}
             >
               {rejectReq.isPending ? "Đang xử lý…" : "Xác nhận từ chối"}
             </Button>
