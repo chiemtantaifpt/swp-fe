@@ -3,6 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Recycle, LogOut, User, Menu, X } from "lucide-react";
 import { useState } from "react";
+import NotificationDropdown from "./NotificationDropdown";
 
 const roleLabels: Record<string, string> = {
   citizen: "Công dân",
@@ -33,6 +34,7 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
           </Link>
 
           <div className="hidden items-center gap-4 md:flex">
+            <NotificationDropdown />
             <div className="flex items-center gap-2 rounded-full bg-muted px-3 py-1.5">
               <User className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-medium text-foreground">{user?.name}</span>
@@ -52,12 +54,15 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
 
         {menuOpen && (
           <div className="border-t border-border bg-card p-4 md:hidden">
-            <div className="mb-3 flex items-center gap-2">
-              <User className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">{user?.name}</span>
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                {roleLabels[user?.role || ""]}
-              </span>
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <User className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">{user?.name}</span>
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                  {roleLabels[user?.role || ""]}
+                </span>
+              </div>
+              <NotificationDropdown />
             </div>
             <Button variant="ghost" size="sm" onClick={handleLogout} className="w-full justify-start">
               <LogOut className="mr-1 h-4 w-4" /> Đăng xuất
