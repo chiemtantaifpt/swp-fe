@@ -11,6 +11,8 @@ export type WasteReportStatus =
   | "Disputed"
   | "NoEnterpriseAvailable";
 
+export type RejectionReason = "WrongWasteType" | "ImageNotClear";
+
 export interface WasteReport {
   id: string;
   citizenId?: string;
@@ -25,6 +27,7 @@ export interface WasteReport {
   collectorId?: string;
   collectorName?: string;
   address?: string;
+  rejectionReasons?: RejectionReason[]; // Lý do từ chối từ enterprises
 }
 
 export interface WasteItem {
@@ -86,6 +89,10 @@ export const wasteReportService = {
   },
 
   // PUT /api/WasteReport/{id} (NoEnterpriseAvailable) — Chỉnh sửa khi NoEnterpriseAvailable
+  // Khi report bị từ chối liên tiếp bởi 3 enterprise khác nhau, status chuyển thành NoEnterpriseAvailable
+  // Nếu bị từ chối bởi 1 trong 2 lý do: WrongWasteType / ImageNotClear, thì bắt buộc phải edit lại và không được redispatch
+  // Nếu bị từ chối 3 lần bởi lí do khác, có thể chọn redispatch (1 lần) hoặc edit (cũng sẽ redispatch)
+  // Edit (update) sẽ gửi lại report và BE tự động xử lý redispatch, nên không cần gọi redispatch riêng khi đã edit
   updateNoEnterpriseAvailable: async (
     id: string,
     data: Pick<WasteReport, "description" | "latitude" | "longitude" | "wastes">,
@@ -95,6 +102,8 @@ export const wasteReportService = {
   },
 
   // POST /api/WasteReport/{id}/redispatch — Tái tạo lại đơn khi treo hoặc bị từ chối nhiều
+  // Chỉ được gọi một lần cho mỗi report
+  // Không gọi redispatch nếu report bị từ chối vì WrongWasteType/ImageNotClear (phải edit lại)
   redispatch: async (id: string): Promise<void> => {
     await api.post(`/WasteReport/${id}/redispatch`);
   },
