@@ -494,6 +494,7 @@ const EnterpriseDashboard = () => {
       <Tabs defaultValue="requests">
         <TabsList>
           <TabsTrigger value="requests">Yêu cầu thu gom</TabsTrigger>
+          <TabsTrigger value="complaints">Khiếu nại</TabsTrigger>
           <TabsTrigger value="proofs" className="gap-1.5">
             <ShieldCheck className="h-4 w-4" />
             Duyệt Proof
@@ -608,6 +609,28 @@ const EnterpriseDashboard = () => {
               </div>
             </TabsContent>
           </Tabs>
+        </TabsContent>
+
+        <TabsContent value="complaints">
+          <Card className="shadow-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 font-display text-base">
+                <AlertCircle className="h-5 w-5 text-amber-600" /> Luồng khiếu nại doanh nghiệp
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <p className="text-foreground">
+                Frontend đã bổ sung complaint flow cho Citizen và Admin. Riêng bước doanh nghiệp phản hồi dispute hiện chưa thể gọi API thật vì backend chưa có endpoint enterprise-specific để:
+              </p>
+              <div className="space-y-1 text-muted-foreground">
+                <p>- Lấy danh sách complaint liên quan đến doanh nghiệp hiện tại.</p>
+                <p>- Gửi nội dung phản hồi dispute từ doanh nghiệp.</p>
+              </div>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                Hiện swagger chỉ có các endpoint complaint cho `Citizen` và `Admin`: tạo complaint, danh sách của tôi, danh sách admin, chi tiết và cập nhật status.
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* ══ Tab: Duyệt Proof ══ */}

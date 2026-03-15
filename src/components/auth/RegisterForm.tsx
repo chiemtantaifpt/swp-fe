@@ -43,17 +43,18 @@ export default function RegisterForm() {
     const e: FieldErrors = {};
     if (!name.trim()) e.name = "Vui lòng nhập họ tên";
     if (!phone.trim()) e.phone = "Vui lòng nhập số điện thoại";
-    else if (!/^(0|\+84)\d{9}$/.test(phone.replace(/\s/g, "")))
+    else if (!/^(0|\+84)\d{9}$/.test(phone.replace(/\s/g, ""))) {
       e.phone = "Số điện thoại không hợp lệ (VD: 0901234567)";
+    }
     if (!email.trim()) e.email = "Vui lòng nhập email";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       e.email = "Email không đúng định dạng";
+    }
     if (!password) e.password = "Vui lòng nhập mật khẩu";
     else if (password.length < 6) e.password = "Tối thiểu 6 ký tự";
     else if (!/\d/.test(password)) e.password = "Phải chứa ít nhất 1 chữ số";
     if (!confirmPassword) e.confirmPassword = "Vui lòng xác nhận mật khẩu";
     else if (password !== confirmPassword) e.confirmPassword = "Mật khẩu không trùng khớp";
-    // Removed enterprise validation as per requirements
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -79,8 +80,17 @@ export default function RegisterForm() {
   };
 
   return (
-    <Card className="border-border/60 shadow-elevated">
-      <CardHeader className="pb-4">
+    <Card className="relative overflow-hidden border border-white/35 bg-white/30 shadow-[0_20px_60px_-18px_rgba(31,61,49,0.35)] backdrop-blur-2xl supports-[backdrop-filter]:bg-white/24">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "linear-gradient(145deg, rgba(255,255,255,0.34), rgba(255,255,255,0.14) 45%, rgba(124,211,181,0.12) 100%)",
+        }}
+      />
+
+      <CardHeader className="relative pb-4">
         <CardTitle className="font-display text-2xl font-bold text-foreground">
           Tạo tài khoản
         </CardTitle>
@@ -89,10 +99,8 @@ export default function RegisterForm() {
         </CardDescription>
       </CardHeader>
 
-      <CardContent>
-        {/* Use div instead of form to prevent browser from auto-clearing password fields on failed submission */}
+      <CardContent className="relative">
         <div className="space-y-4">
-          {/* Row: Họ tên + Phone */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="reg-name">Họ tên</Label>
@@ -102,11 +110,14 @@ export default function RegisterForm() {
                 value={name}
                 onChange={(e) => { setName(e.target.value); clearError("name"); }}
                 disabled={loading}
-                className={`focus-visible:ring-2 focus-visible:ring-primary/50 ${errors.name ? "border-destructive" : ""}`}
+                className={`border-white/45 bg-white/45 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                  errors.name ? "border-destructive focus-visible:ring-destructive/50" : ""
+                }`}
                 autoComplete="name"
               />
               {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
             </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="reg-phone">Số điện thoại</Label>
               <Input
@@ -116,14 +127,15 @@ export default function RegisterForm() {
                 value={phone}
                 onChange={(e) => { setPhone(e.target.value); clearError("phone"); }}
                 disabled={loading}
-                className={`focus-visible:ring-2 focus-visible:ring-primary/50 ${errors.phone ? "border-destructive" : ""}`}
+                className={`border-white/45 bg-white/45 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                  errors.phone ? "border-destructive focus-visible:ring-destructive/50" : ""
+                }`}
                 autoComplete="tel"
               />
               {errors.phone && <p className="text-xs text-destructive">{errors.phone}</p>}
             </div>
           </div>
 
-          {/* Email */}
           <div className="space-y-1.5">
             <Label htmlFor="reg-email">Email</Label>
             <Input
@@ -133,13 +145,14 @@ export default function RegisterForm() {
               value={email}
               onChange={(e) => { setEmail(e.target.value); clearError("email"); }}
               disabled={loading}
-              className={`focus-visible:ring-2 focus-visible:ring-primary/50 ${errors.email ? "border-destructive" : ""}`}
+              className={`border-white/45 bg-white/45 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                errors.email ? "border-destructive focus-visible:ring-destructive/50" : ""
+              }`}
               autoComplete="email"
             />
             {errors.email && <p className="text-xs text-destructive">{errors.email}</p>}
           </div>
 
-          {/* Password */}
           <div className="space-y-1.5">
             <Label htmlFor="reg-password">Mật khẩu</Label>
             <div className="relative">
@@ -150,7 +163,9 @@ export default function RegisterForm() {
                 value={password}
                 onChange={(e) => { setPassword(e.target.value); clearError("password"); }}
                 disabled={loading}
-                className={`pr-10 focus-visible:ring-2 focus-visible:ring-primary/50 ${errors.password ? "border-destructive" : ""}`}
+                className={`border-white/45 bg-white/45 pr-10 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                  errors.password ? "border-destructive focus-visible:ring-destructive/50" : ""
+                }`}
                 autoComplete="new-password"
               />
               <button
@@ -158,7 +173,8 @@ export default function RegisterForm() {
                 tabIndex={-1}
                 onClick={() => setShowPw((v) => !v)}
                 disabled={loading}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                aria-label={showPw ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
               >
                 {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
@@ -166,7 +182,6 @@ export default function RegisterForm() {
             {errors.password && <p className="text-xs text-destructive">{errors.password}</p>}
           </div>
 
-          {/* Confirm Password */}
           <div className="space-y-1.5">
             <Label htmlFor="reg-confirm">Xác nhận mật khẩu</Label>
             <div className="relative">
@@ -177,7 +192,9 @@ export default function RegisterForm() {
                 value={confirmPassword}
                 onChange={(e) => { setConfirmPassword(e.target.value); clearError("confirmPassword"); }}
                 disabled={loading}
-                className={`pr-10 focus-visible:ring-2 focus-visible:ring-primary/50 ${errors.confirmPassword ? "border-destructive" : ""}`}
+                className={`border-white/45 bg-white/45 pr-10 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                  errors.confirmPassword ? "border-destructive focus-visible:ring-destructive/50" : ""
+                }`}
                 autoComplete="new-password"
               />
               <button
@@ -185,7 +202,8 @@ export default function RegisterForm() {
                 tabIndex={-1}
                 onClick={() => setShowConfirmPw((v) => !v)}
                 disabled={loading}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                aria-label={showConfirmPw ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
               >
                 {showConfirmPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
@@ -195,11 +213,10 @@ export default function RegisterForm() {
             )}
           </div>
 
-          {/* Role */}
           <div className="space-y-1.5">
             <Label>Vai trò</Label>
             <Select value={role} onValueChange={(v) => setRole(v as UserRole)} disabled={loading}>
-              <SelectTrigger className="focus:ring-2 focus:ring-primary/50">
+              <SelectTrigger className="border-white/45 bg-white/45 focus:ring-2 focus:ring-primary/40">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -210,11 +227,10 @@ export default function RegisterForm() {
             </Select>
           </div>
 
-          {/* Submit */}
           <Button
             type="button"
             onClick={handleSubmit}
-            className="mt-2 w-full font-semibold transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98]"
+            className="mt-2 w-full border border-primary/20 bg-primary text-primary-foreground shadow-[0_16px_30px_-12px_rgba(65,133,148,0.55)] transition-all duration-150 hover:-translate-y-0.5 hover:bg-primary/92 hover:shadow-[0_22px_36px_-14px_rgba(65,133,148,0.65)] active:scale-[0.98]"
             disabled={loading}
           >
             {loading ? (
@@ -231,13 +247,13 @@ export default function RegisterForm() {
           </Button>
         </div>
 
-        <Separator className="my-5" />
+        <Separator className="my-5 bg-white/35" />
 
         <p className="text-center text-sm text-muted-foreground">
           Đã có tài khoản?{" "}
           <Link
             to="/login"
-            className="font-semibold text-primary underline-offset-4 hover:underline transition-colors"
+            className="font-semibold text-primary underline-offset-4 transition-colors hover:underline"
           >
             Đăng nhập
           </Link>

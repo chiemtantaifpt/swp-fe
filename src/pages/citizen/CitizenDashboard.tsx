@@ -19,6 +19,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { wasteReportService, WasteReport, CreateWasteReportRequest } from "@/services/wasteReport";
 import { wasteTypeService } from "@/services/wasteType";
 import { imageService } from "@/services/image";
+import { complaintService, Complaint } from "@/services/complaint";
+import { disputeResolutionService } from "@/services/disputeResolution";
 
 const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   PENDING: { label: "Chờ xử lý", variant: "secondary" },
@@ -29,6 +31,18 @@ const statusMap: Record<string, { label: string; variant: "default" | "secondary
   CANCELLED: { label: "Đã hủy", variant: "destructive" },
 };
 
+const complaintStatusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+  Open: { label: "Mở", variant: "secondary" },
+  InReview: { label: "Đang xem xét", variant: "outline" },
+  Resolved: { label: "Đã giải quyết", variant: "default" },
+  Rejected: { label: "Từ chối", variant: "destructive" },
+};
+
+const complaintTypeMap: Record<string, string> = {
+  Feedback: "Phản hồi",
+  Complaint: "Khiếu nại",
+};
+
 const mockLeaderboard = [
   { rank: 1, name: "Trần Thị B", points: 520, district: "Quận 1" },
   { rank: 2, name: "Nguyễn Văn An", points: 320, district: "Quận 1" },
@@ -36,6 +50,45 @@ const mockLeaderboard = [
   { rank: 4, name: "Phạm Thị D", points: 210, district: "Quận 1" },
   { rank: 5, name: "Hoàng Văn E", points: 180, district: "Quận 1" },
 ];
+
+const CitizenComplaintCard = ({
+  complaint,
+  reportSummary,
+  onView,
+}: {
+  complaint: Complaint;
+  reportSummary: string;
+  onView: (complaint: Complaint) => void;
+}) => {
+  const badge = complaintStatusMap[complaint.status] || { label: complaint.status, variant: "secondary" as const };
+  const complaintTypeLabel = complaintTypeMap[complaint.type] || complaint.type;
+
+  return (
+    <Card className="shadow-card">
+      <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex-1 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{complaintTypeLabel}</Badge>
+            <Badge variant={badge.variant}>{badge.label}</Badge>
+          </div>
+          <p className="text-sm text-foreground">{complaint.content}</p>
+          <p className="text-xs text-muted-foreground">
+            {reportSummary} • {new Date(complaint.createdTime).toLocaleString("vi-VN")}
+          </p>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-3">
+          <span className="text-xs text-muted-foreground">
+            {complaint.status === "Resolved" ? "Đã có kết quả xử lý" : "Đang chờ phản hồi"}
+          </span>
+          <Button size="sm" variant="outline" onClick={() => onView(complaint)}>
+            Xem chi tiết
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
 
 const CitizenDashboard = () => {
   const { user } = useAuth();
@@ -46,6 +99,12 @@ const CitizenDashboard = () => {
   const [open, setOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<WasteReport | null>(null);
   const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [complaintDialogOpen, setComplaintDialogOpen] = useState(false);
+  const [complaintReport, setComplaintReport] = useState<WasteReport | null>(null);
+  const [complaintType, setComplaintType] = useState("Feedback");
+  const [complaintContent, setComplaintContent] = useState("");
+  const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(null);
 
   // Tạo blob preview URLs 1 lần khi imageFiles thay đổi, cleanup để tránh memory leak
   useEffect(() => {
@@ -99,6 +158,41 @@ const CitizenDashboard = () => {
     (r) => !r.citizenId || r.citizenId === user?.id
   );
 
+  const { data: complaintData, isLoading: loadingComplaints } = useQuery({
+    queryKey: ["complaints", "my", user?.id],
+    queryFn: () => complaintService.getMy({ ComplainantId: user?.id, PageNumber: 1, PageSize: 50 }),
+    enabled: !!user?.id,
+  });
+  const complaints = complaintData?.items ?? [];
+
+  const {
+    data: selectedComplaintResolutions = [],
+    isLoading: selectedComplaintResolutionsLoading,
+    isError: selectedComplaintResolutionsError,
+  } = useQuery({
+    queryKey: ["complaintResolutions", selectedComplaint?.id],
+    queryFn: () => disputeResolutionService.getByComplaint(selectedComplaint!.id),
+    enabled: !!selectedComplaint,
+  });
+
+  const resetComplaintForm = () => {
+    setComplaintType("Feedback");
+    setComplaintContent("");
+    setComplaintReport(null);
+  };
+
+  const openComplaintDialog = (report: WasteReport) => {
+    setComplaintReport(report);
+    setComplaintType("Feedback");
+    setComplaintContent("");
+    setComplaintDialogOpen(true);
+  };
+
+  const closeComplaintDialog = () => {
+    setComplaintDialogOpen(false);
+    resetComplaintForm();
+  };
+
   // Mutation tạo báo cáo mới
   const createMutation = useMutation({
     mutationFn: wasteReportService.create,
@@ -146,6 +240,23 @@ const CitizenDashboard = () => {
       queryClient.invalidateQueries({ queryKey: ["wasteReports"] });
     },
     onError: () => toast.error("Cập nhật báo cáo thất bại. Vui lòng thử lại!"),
+  });
+
+  const createComplaintMutation = useMutation({
+    mutationFn: () =>
+      complaintService.create({
+        reportId: complaintReport!.id,
+        type: complaintType.trim(),
+        content: complaintContent.trim(),
+      }),
+    onSuccess: () => {
+      toast.success("Đã gửi khiếu nại thành công");
+      queryClient.invalidateQueries({ queryKey: ["complaints", "my"] });
+      closeComplaintDialog();
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Gửi khiếu nại thất bại");
+    },
   });
 
   const getGPS = () => {
@@ -227,6 +338,7 @@ const CitizenDashboard = () => {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingReport || createMutation.isPending) return;
     if (selectedWastes.length === 0) { toast.error("Vui lòng chọn ít nhất 1 loại rác"); return; }
     if (imageFiles.length === 0) { toast.error("Vui lòng có ít nhất 1 ảnh"); return; }
     if (!form.latitude) { toast.error("Vui lòng xác định vị trí GPS"); return; }
@@ -237,9 +349,10 @@ const CitizenDashboard = () => {
       return;
     }
 
-    // Upload ảnh trước, lấy URLs
-    let imageUrls: string[] = [];
+    setIsSubmittingReport(true);
     try {
+      // Upload ảnh trước, lấy URLs
+      let imageUrls: string[] = [];
       if (imageFiles.length === 1) {
         const result = await imageService.uploadOne(imageFiles[0]);
         imageUrls = [result.url];
@@ -251,26 +364,27 @@ const CitizenDashboard = () => {
         }
         imageUrls = result.uploaded.map((u) => u.url);
       }
+      await createMutation.mutateAsync({
+        description: form.description || undefined,
+        latitude: form.latitude,
+        longitude: form.longitude,
+        wastes: selectedWastes.map((waste, i) => ({
+          wasteTypeId: waste.wasteTypeId,
+          quantity: waste.quantity,
+          note: waste.note || undefined,
+          // Gắn toàn bộ URL ảnh vào waste đầu tiên
+          images: i === 0 ? imageUrls : undefined,
+        })),
+      });
     } catch {
       toast.error("Upload ảnh thất bại, vui lòng thử lại");
-      return;
+    } finally {
+      setIsSubmittingReport(false);
     }
-
-    createMutation.mutate({
-      description: form.description || undefined,
-      latitude: form.latitude,
-      longitude: form.longitude,
-      wastes: selectedWastes.map((waste, i) => ({
-        wasteTypeId: waste.wasteTypeId,
-        quantity: waste.quantity,
-        note: waste.note || undefined,
-        // Gắn toàn bộ URL ảnh vào waste đầu tiên
-        images: i === 0 ? imageUrls : undefined,
-      })),
-    });
   };
 
-  const isSubmitDisabled = createMutation.isPending ||
+  const isSubmitDisabled = isSubmittingReport ||
+    createMutation.isPending ||
     selectedWastes.length === 0 ||
     imageFiles.length === 0 ||
     !form.latitude ||
@@ -278,7 +392,7 @@ const CitizenDashboard = () => {
 
   // Determine why the create button is disabled
   const getCreateButtonDisabledReason = () => {
-    if (createMutation.isPending) return "Đang gửi báo cáo...";
+    if (isSubmittingReport || createMutation.isPending) return "Đang gửi báo cáo...";
     if (selectedWastes.length === 0) return "Vui lòng chọn ít nhất 1 loại rác";
     if (selectedWastes.some((w) => !w.quantity || w.quantity <= 0)) return "Vui lòng nhập số lượng > 0 cho tất cả loại rác";
     if (imageFiles.length === 0) return "Vui lòng thêm ít nhất 1 ảnh";
@@ -289,9 +403,40 @@ const CitizenDashboard = () => {
   const createButtonDisabledReason = getCreateButtonDisabledReason();
   const isCreateButtonDisabled = !!createButtonDisabledReason;
 
+  const handleCreateComplaint = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!complaintReport) {
+      toast.error("Không tìm thấy báo cáo để khiếu nại");
+      return;
+    }
+    if (!complaintType.trim()) {
+      toast.error("Vui lòng chọn loại khiếu nại");
+      return;
+    }
+    if (!complaintContent.trim()) {
+      toast.error("Vui lòng nhập nội dung khiếu nại");
+      return;
+    }
+    createComplaintMutation.mutate();
+  };
+
+  const getComplaintReportSummary = (complaint: Complaint) => {
+    const report = reports.find((item) => item.id === complaint.reportId);
+    if (!report) return "Báo cáo liên quan";
+    const title = report.description?.trim() || report.wastes?.map((w) => w.wasteTypeName || w.wasteTypeId).join(", ") || "Báo cáo rác";
+    return title;
+  };
+
   // Thống kê nhanh từ danh sách báo cáo
   const totalReports = reports.length;
-  const pendingReports = reports.filter((r) => r.status === "PENDING" || r.status === "PROCESSING").length;
+  const pendingReports = reports.filter((r) => {
+    const status = r.status?.toUpperCase();
+    return status === "PENDING" || status === "PROCESSING";
+  }).length;
+  const openComplaintCount = complaints.filter((c) => {
+    const status = c.status?.toUpperCase();
+    return status === "OPEN" || status === "INREVIEW";
+  }).length;
 
   return (
     <DashboardLayout>
@@ -325,6 +470,14 @@ const CitizenDashboard = () => {
       <Tabs defaultValue="reports">
         <TabsList>
           <TabsTrigger value="reports">Báo cáo của tôi</TabsTrigger>
+          <TabsTrigger value="complaints" className="gap-1.5">
+            Khiếu nại của tôi
+            {openComplaintCount > 0 && (
+              <Badge variant="secondary" className="h-5 min-w-5 px-1 text-xs">
+                {openComplaintCount}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="leaderboard">Bảng xếp hạng</TabsTrigger>
         </TabsList>
 
@@ -717,6 +870,17 @@ const CitizenDashboard = () => {
                             <Star className="h-4 w-4" /> +{r.points}
                           </span>
                         )}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openComplaintDialog(r);
+                          }}
+                        >
+                          Khiếu nại
+                        </Button>
                         <Badge variant={st.variant}>{st.label}</Badge>
                         <ChevronRight className="h-4 w-4 text-muted-foreground" />
                       </div>
@@ -724,6 +888,38 @@ const CitizenDashboard = () => {
                   </Card>
                 );
               })}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="complaints">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="font-display text-lg font-semibold text-foreground">Khiếu nại của tôi</h2>
+              <p className="text-sm text-muted-foreground">Theo dõi trạng thái xử lý complaint theo từng báo cáo.</p>
+            </div>
+          </div>
+
+          {loadingComplaints ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : complaints.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-12 text-center">
+              <AlertTriangle className="mb-2 h-8 w-8 text-muted-foreground" />
+              <p className="font-medium text-foreground">Chưa có khiếu nại nào</p>
+              <p className="text-sm text-muted-foreground">Vào tab "Báo cáo của tôi" và bấm "Khiếu nại" trên báo cáo cần xử lý.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {complaints.map((complaint) => (
+                <CitizenComplaintCard
+                  key={complaint.id}
+                  complaint={complaint}
+                  reportSummary={getComplaintReportSummary(complaint)}
+                  onView={setSelectedComplaint}
+                />
+              ))}
             </div>
           )}
         </TabsContent>
@@ -780,6 +976,117 @@ const CitizenDashboard = () => {
         onUpdateNoEnterprise={(id, data) => updateNoEnterpriseMutation.mutate({ id, data })}
         isUpdatingNoEnterprise={updateNoEnterpriseMutation.isPending}
       />
+
+      <Dialog open={complaintDialogOpen} onOpenChange={(open) => { if (!open) closeComplaintDialog(); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display">Tạo khiếu nại</DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleCreateComplaint} className="space-y-4">
+            <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm">
+              <p className="font-medium text-foreground">
+                Báo cáo: {complaintReport?.description?.trim() || complaintReport?.wastes?.map((w) => w.wasteTypeName || w.wasteTypeId).join(", ") || "Báo cáo rác"}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">{"Khiếu nại sẽ được gửi kèm với báo cáo bạn đang chọn."}</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="complaintType">Loại khiếu nại</Label>
+              <Select value={complaintType} onValueChange={setComplaintType}>
+                <SelectTrigger id="complaintType">
+                  <SelectValue>{complaintTypeMap[complaintType] || complaintType}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Feedback">{"Phản hồi"}</SelectItem>
+                  <SelectItem value="Complaint">{"Khiếu nại"}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="complaintContent">Nội dung</Label>
+              <Textarea
+                id="complaintContent"
+                rows={5}
+                value={complaintContent}
+                onChange={(e) => setComplaintContent(e.target.value)}
+                placeholder="Mô tả vấn đề bạn muốn khiếu nại..."
+                disabled={createComplaintMutation.isPending}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={closeComplaintDialog} disabled={createComplaintMutation.isPending}>
+                Hủy
+              </Button>
+              <Button type="submit" disabled={createComplaintMutation.isPending}>
+                {createComplaintMutation.isPending ? "Đang gửi..." : "Gửi khiếu nại"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!selectedComplaint} onOpenChange={(open) => { if (!open) setSelectedComplaint(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display">Chi tiết khiếu nại</DialogTitle>
+          </DialogHeader>
+
+          {selectedComplaint && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">{complaintTypeMap[selectedComplaint.type] || selectedComplaint.type}</Badge>
+                <Badge variant={(complaintStatusMap[selectedComplaint.status] || { variant: "secondary" as const }).variant}>
+                  {(complaintStatusMap[selectedComplaint.status] || { label: selectedComplaint.status }).label}
+                </Badge>
+              </div>
+
+              <div className="rounded-lg border border-border bg-muted/30 p-4">
+                <p className="text-sm font-medium text-foreground">Báo cáo liên quan</p>
+                <p className="mt-1 text-sm text-foreground">{getComplaintReportSummary(selectedComplaint)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Tạo lúc {new Date(selectedComplaint.createdTime).toLocaleString("vi-VN")}
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-border p-4">
+                <p className="text-sm font-medium text-foreground">Nội dung khiếu nại</p>
+                <p className="mt-1 text-sm text-foreground">{selectedComplaint.content}</p>
+              </div>
+
+              <div className="rounded-lg border border-border p-4">
+                <p className="text-sm font-medium text-foreground">Kết quả xử lý</p>
+                {selectedComplaint.status !== "Resolved" ? (
+                  <p className="mt-1 text-sm text-muted-foreground">Khiếu nại này đang được xử lý hoặc chưa có kết quả cuối cùng.</p>
+                ) : selectedComplaintResolutionsLoading ? (
+                  <p className="mt-1 text-sm text-muted-foreground">Đang tải kết quả xử lý...</p>
+                ) : selectedComplaintResolutionsError ? (
+                  <p className="mt-1 text-sm text-destructive">Không thể tải kết quả xử lý</p>
+                ) : selectedComplaintResolutions.length === 0 ? (
+                  <p className="mt-1 text-sm text-muted-foreground">Backend chưa trả về dispute resolution cho complaint này.</p>
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    {selectedComplaintResolutions.map((resolution) => (
+                      <div key={resolution.id} className="rounded-md border border-border bg-muted/30 p-3">
+                        <p className="text-sm text-foreground">{String(resolution.responseNote ?? resolution.resolutionNote ?? "Không có nội dung")}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {new Date(String(resolution.resolvedAt ?? resolution.createdTime ?? selectedComplaint.createdTime)).toLocaleString("vi-VN")}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={() => setSelectedComplaint(null)}>Đóng</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 };

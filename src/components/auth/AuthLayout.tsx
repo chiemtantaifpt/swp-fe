@@ -8,19 +8,23 @@ interface AuthLayoutProps {
 
 export default function AuthLayout({ children }: AuthLayoutProps) {
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      {/* ── Left: Animated Brand Panel (desktop only) ── */}
-      <div className="hidden md:block md:w-[45%] lg:w-1/2 flex-shrink-0 overflow-hidden">
+    <div className="flex min-h-screen overflow-hidden bg-background">
+      <div className="hidden overflow-hidden md:block md:w-[45%] lg:w-1/2">
         <div className="h-full w-full">
           <AnimatedBrandPanel />
         </div>
       </div>
 
-      {/* ── Right: direct overflow-y-auto on the flex child ── */}
-      {/* In a flex row with h-screen on parent, this child is capped at h-screen */}
-      {/* overflow-y-auto then creates the scrollbar here, not on <body>        */}
-      <div className="flex-1 overflow-y-auto bg-background md:bg-muted/30">
-        {/* Mobile-only mini header — sticky inside the scroll area */}
+      <div className="relative flex-1 overflow-y-auto bg-background md:bg-muted/30">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 hidden md:block"
+          style={{
+            background:
+              "radial-gradient(circle at 28% 30%, rgba(124, 211, 181, 0.28), transparent 28%), radial-gradient(circle at 74% 66%, rgba(88, 164, 179, 0.22), transparent 30%), linear-gradient(180deg, rgba(255,255,255,0.72), rgba(245,250,246,0.82))",
+          }}
+        />
+
         <div className="sticky top-0 z-10 flex items-center gap-2.5 border-b border-border bg-card px-5 py-3.5 md:hidden">
           <Link to="/" className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary shadow-sm">
@@ -30,9 +34,8 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
           </Link>
         </div>
 
-        {/* Form content */}
-        <div className="flex justify-center px-4 py-8">
-          <div className="w-full max-w-md">{children}</div>
+        <div className="relative flex min-h-[calc(100vh-69px)] items-center justify-center px-4 py-8 md:min-h-screen md:px-8">
+          <div className="w-full max-w-md md:max-w-lg">{children}</div>
         </div>
       </div>
     </div>
