@@ -85,6 +85,20 @@ export const wasteReportService = {
     return response.data;
   },
 
+  // PUT /api/WasteReport/{id} (NoEnterpriseAvailable) — Chỉnh sửa khi NoEnterpriseAvailable
+  updateNoEnterpriseAvailable: async (
+    id: string,
+    data: Pick<WasteReport, "description" | "latitude" | "longitude" | "wastes">,
+  ): Promise<WasteReport> => {
+    const response = await api.put<WasteReport>(`/WasteReport/${id}`, data);
+    return response.data;
+  },
+
+  // POST /api/WasteReport/{id}/redispatch — Tái tạo lại đơn khi treo hoặc bị từ chối nhiều
+  redispatch: async (id: string): Promise<void> => {
+    await api.post(`/WasteReport/${id}/redispatch`);
+  },
+
   // DELETE /api/WasteReport/{id} — Citizen hủy báo cáo
   delete: async (id: string): Promise<void> => {
     await api.delete(`/WasteReport/${id}`);
