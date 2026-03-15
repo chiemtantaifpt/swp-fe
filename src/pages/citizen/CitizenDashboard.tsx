@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Plus, MapPin, Clock, Award, Trophy, Star, Camera, TrendingUp, Loader2, ChevronRight, X, Map, Search, AlertTriangle, ChevronDown, ChevronLeft, Leaf, Recycle, Flame, Package } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -56,7 +57,7 @@ const CitizenDashboard = () => {
   }, [imageFiles]);
 
   // Multi-select waste type state
-  const [selectedWasteTypeIds, setSelectedWasteTypeIds] = useState<string[]>([]);
+  const [selectedWastes, setSelectedWastes] = useState<Array<{ wasteTypeId: string; quantity: number; note: string }>>([]);
   const [wtSearch, setWtSearch] = useState("");
   const [wtDropdownOpen, setWtDropdownOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
@@ -72,7 +73,7 @@ const CitizenDashboard = () => {
   const resetForm = () => {
     setForm({ description: "", address: "", latitude: undefined, longitude: undefined });
     setImageFiles([]);
-    setSelectedWasteTypeIds([]);
+    setSelectedWastes([]);
     setWtSearch("");
     setSelectedCategory(null);
     setLocationName(null);
@@ -122,6 +123,29 @@ const CitizenDashboard = () => {
       queryClient.invalidateQueries({ queryKey: ["wasteReports"] });
     },
     onError: () => toast.error("Hủy báo cáo thất bại. Vui lòng thử lại!"),
+  });
+
+  // Mutation redispatch báo cáo
+  const redispatchMutation = useMutation({
+    mutationFn: wasteReportService.redispatch,
+    onSuccess: () => {
+      toast.success("Báo cáo đã được gửi lại!");
+      setSelectedReport(null);
+      queryClient.invalidateQueries({ queryKey: ["wasteReports"] });
+    },
+    onError: () => toast.error("Gửi lại báo cáo thất bại. Vui lòng thử lại!"),
+  });
+
+  // Mutation update báo cáo khi NoEnterpriseAvailable
+  const updateNoEnterpriseMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Parameters<typeof wasteReportService.updateNoEnterpriseAvailable>[1] }) =>
+      wasteReportService.updateNoEnterpriseAvailable(id, data),
+    onSuccess: () => {
+      toast.success("Báo cáo đã được cập nhật và gửi lại!");
+      setSelectedReport(null);
+      queryClient.invalidateQueries({ queryKey: ["wasteReports"] });
+    },
+    onError: () => toast.error("Cập nhật báo cáo thất bại. Vui lòng thử lại!"),
   });
 
   const getGPS = () => {
@@ -178,26 +202,40 @@ const CitizenDashboard = () => {
   }, [wasteTypes, wtSearch, selectedCategory]);
 
   const hasHazardous = useMemo(() => {
-    return selectedWasteTypeIds.some((id) => {
-      const wt = wasteTypes.find((w) => w.id === id);
+    return selectedWastes.some((waste) => {
+      const wt = wasteTypes.find((w) => w.id === waste.wasteTypeId);
       return wt?.category === 2;
     });
-  }, [selectedWasteTypeIds, wasteTypes]);
+  }, [selectedWastes, wasteTypes]);
 
   const toggleWasteType = (id: string) => {
-    setSelectedWasteTypeIds((prev) => {
-      if (prev.includes(id)) return prev.filter((x) => x !== id);
-      if (prev.length >= 5) { toast.error("Chỉ được chọn tối đa 5 loại rác"); return prev; }
-      return [...prev, id];
+    setSelectedWastes((prev) => {
+      const existing = prev.find((w) => w.wasteTypeId === id);
+      if (existing) {
+        // Remove
+        return prev.filter((w) => w.wasteTypeId !== id);
+      } else {
+        // Add with default quantity 1 and empty note
+        if (prev.length >= 5) {
+          toast.error("Chỉ được chọn tối đa 5 loại rác");
+          return prev;
+        }
+        return [...prev, { wasteTypeId: id, quantity: 1, note: "" }];
+      }
     });
   };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedWasteTypeIds.length === 0) { toast.error("Vui lòng chọn ít nhất 1 loại rác"); return; }
+    if (selectedWastes.length === 0) { toast.error("Vui lòng chọn ít nhất 1 loại rác"); return; }
     if (imageFiles.length === 0) { toast.error("Vui lòng có ít nhất 1 ảnh"); return; }
     if (!form.latitude) { toast.error("Vui lòng xác định vị trí GPS"); return; }
-    if (!form.address) { toast.error("Vui lòng nhập địa chỉ chi tiết"); return; }
+
+    // Validate quantities > 0
+    if (selectedWastes.some((w) => !w.quantity || w.quantity <= 0)) {
+      toast.error("Số lượng phải lớn hơn 0");
+      return;
+    }
 
     // Upload ảnh trước, lấy URLs
     let imageUrls: string[] = [];
@@ -222,8 +260,10 @@ const CitizenDashboard = () => {
       description: form.description || undefined,
       latitude: form.latitude,
       longitude: form.longitude,
-      wastes: selectedWasteTypeIds.map((id, i) => ({
-        wasteTypeId: id,
+      wastes: selectedWastes.map((waste, i) => ({
+        wasteTypeId: waste.wasteTypeId,
+        quantity: waste.quantity,
+        note: waste.note || undefined,
         // Gắn toàn bộ URL ảnh vào waste đầu tiên
         images: i === 0 ? imageUrls : undefined,
       })),
@@ -231,10 +271,23 @@ const CitizenDashboard = () => {
   };
 
   const isSubmitDisabled = createMutation.isPending ||
-    selectedWasteTypeIds.length === 0 ||
+    selectedWastes.length === 0 ||
     imageFiles.length === 0 ||
     !form.latitude ||
-    !form.address;
+    selectedWastes.some((w) => !w.quantity || w.quantity <= 0);
+
+  // Determine why the create button is disabled
+  const getCreateButtonDisabledReason = () => {
+    if (createMutation.isPending) return "Đang gửi báo cáo...";
+    if (selectedWastes.length === 0) return "Vui lòng chọn ít nhất 1 loại rác";
+    if (selectedWastes.some((w) => !w.quantity || w.quantity <= 0)) return "Vui lòng nhập số lượng > 0 cho tất cả loại rác";
+    if (imageFiles.length === 0) return "Vui lòng thêm ít nhất 1 ảnh";
+    if (!form.latitude) return "Vui lòng xác định vị trí GPS";
+    return null;
+  };
+
+  const createButtonDisabledReason = getCreateButtonDisabledReason();
+  const isCreateButtonDisabled = !!createButtonDisabledReason;
 
   // Thống kê nhanh từ danh sách báo cáo
   const totalReports = reports.length;
@@ -297,16 +350,16 @@ const CitizenDashboard = () => {
                         className="min-h-10 cursor-pointer rounded-md border border-input bg-background px-3 py-2 pr-16 text-sm ring-offset-background transition-colors hover:border-primary focus-within:ring-2 focus-within:ring-ring"
                         onClick={() => setWtDropdownOpen((v) => !v)}
                       >
-                        {selectedWasteTypeIds.length === 0 ? (
+                        {selectedWastes.length === 0 ? (
                           <span className="text-muted-foreground">Chọn tối đa 5 loại rác</span>
                         ) : (
                           <div className="flex flex-wrap gap-1.5">
-                            {selectedWasteTypeIds.map((id) => {
-                              const wt = wasteTypes.find((w) => w.id === id);
+                            {selectedWastes.map((waste) => {
+                              const wt = wasteTypes.find((w) => w.id === waste.wasteTypeId);
                               return (
-                                <span key={id} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                                  {wt?.name ?? id}
-                                  <button type="button" onClick={(e) => { e.stopPropagation(); toggleWasteType(id); }}>
+                                <span key={waste.wasteTypeId} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                                  {wt?.name ?? waste.wasteTypeId}
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); toggleWasteType(waste.wasteTypeId); }}>
                                     <X className="h-3 w-3" />
                                   </button>
                                 </span>
@@ -316,8 +369,8 @@ const CitizenDashboard = () => {
                         )}
                         {/* Counter + chevron */}
                         <div className="absolute right-3 top-2.5 flex items-center gap-1.5">
-                          {selectedWasteTypeIds.length > 0 && (
-                            <span className="text-[11px] font-medium text-muted-foreground">{selectedWasteTypeIds.length}/5</span>
+                          {selectedWastes.length > 0 && (
+                            <span className="text-[11px] font-medium text-muted-foreground">{selectedWastes.length}/5</span>
                           )}
                           <ChevronDown className="h-4 w-4 text-muted-foreground" />
                         </div>
@@ -386,7 +439,7 @@ const CitizenDashboard = () => {
                                     <p className="px-3 py-4 text-center text-xs text-muted-foreground">Không tìm thấy loại rác</p>
                                   ) : (
                                     filteredWasteTypes.map((wt) => {
-                                      const selected = selectedWasteTypeIds.includes(wt.id);
+                                      const selected = selectedWastes.some((w) => w.wasteTypeId === wt.id);
                                       return (
                                         <div
                                           key={wt.id}
@@ -419,6 +472,63 @@ const CitizenDashboard = () => {
                       </div>
                     )}
                   </div>
+
+                  {/* ── Chi tiết loại rác ── */}
+                  {selectedWastes.length > 0 && (
+                    <div>
+                      <Label>Chi tiết loại rác</Label>
+                      <div className="mt-1 space-y-3">
+                        {selectedWastes.map((waste, index) => {
+                          const wt = wasteTypes.find((w) => w.id === waste.wasteTypeId);
+                          return (
+                            <div key={waste.wasteTypeId} className="flex items-start gap-3 rounded-lg border border-border p-3">
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-foreground">{wt?.name ?? waste.wasteTypeId}</p>
+                                <div className="mt-2 grid grid-cols-2 gap-2">
+                                  <div>
+                                    <Label className="text-xs">Số lượng *</Label>
+                                    <Input
+                                      type="number"
+                                      min="1"
+                                      step="1"
+                                      className="mt-1 h-8 text-sm"
+                                      value={waste.quantity}
+                                      onChange={(e) => {
+                                        const qty = parseInt(e.target.value) || 1;
+                                        setSelectedWastes((prev) =>
+                                          prev.map((w, i) => (i === index ? { ...w, quantity: qty } : w))
+                                        );
+                                      }}
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs">Ghi chú</Label>
+                                    <Input
+                                      className="mt-1 h-8 text-sm"
+                                      placeholder="Ví dụ: túi 10kg"
+                                      value={waste.note}
+                                      onChange={(e) => {
+                                        setSelectedWastes((prev) =>
+                                          prev.map((w, i) => (i === index ? { ...w, note: e.target.value } : w))
+                                        );
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                className="mt-1 flex h-6 w-6 items-center justify-center rounded-full border border-border hover:bg-muted"
+                                onClick={() => toggleWasteType(waste.wasteTypeId)}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {/* ── Mô tả ── */}
                   <div>
@@ -505,7 +615,7 @@ const CitizenDashboard = () => {
 
                   {/* ── Địa chỉ chi tiết ── */}
                   <div>
-                    <Label>Địa chỉ chi tiết *</Label>
+                    <Label>Địa chỉ chi tiết</Label>
                     <Input
                       className="mt-1"
                       placeholder="Số nhà, đường, phường..."
@@ -515,20 +625,39 @@ const CitizenDashboard = () => {
                   </div>
 
                   {/* Validation hints */}
-                  {(selectedWasteTypeIds.length === 0 || imageFiles.length === 0 || !form.latitude || !form.address) && (
+                  {(selectedWastes.length === 0 || imageFiles.length === 0 || !form.latitude || selectedWastes.some((w) => !w.quantity || w.quantity <= 0)) && (
                     <ul className="space-y-0.5 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                      {selectedWasteTypeIds.length === 0 && <li>• Chọn ít nhất 1 loại rác</li>}
+                      {selectedWastes.length === 0 && <li>• Chọn ít nhất 1 loại rác</li>}
+                      {selectedWastes.some((w) => !w.quantity || w.quantity <= 0) && <li>• Nhập số lượng &gt; 0 cho tất cả loại rác</li>}
                       {imageFiles.length === 0 && <li>• Thêm ít nhất 1 ảnh</li>}
                       {!form.latitude && <li>• Xác định vị trí GPS</li>}
-                      {!form.address && <li>• Nhập địa chỉ chi tiết</li>}
                     </ul>
                   )}
 
-                  <Button type="submit" className="w-full" disabled={isSubmitDisabled}>
-                    {createMutation.isPending ? (
-                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Đang gửi...</>
-                    ) : "Gửi báo cáo"}
-                  </Button>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="w-full">
+                          <Button
+                            type="submit"
+                            className={`w-full border-2 border-primary/20 hover:border-primary/40 transition-colors ${
+                              isCreateButtonDisabled ? "opacity-50 cursor-not-allowed" : "shadow-sm hover:shadow-md"
+                            }`}
+                            disabled={isCreateButtonDisabled}
+                          >
+                            {createMutation.isPending ? (
+                              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Đang gửi...</>
+                            ) : "Gửi báo cáo"}
+                          </Button>
+                        </div>
+                      </TooltipTrigger>
+                      {createButtonDisabledReason && (
+                        <TooltipContent>
+                          <p>{createButtonDisabledReason}</p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
                 </form>
               </DialogContent>
             </Dialog>
@@ -646,6 +775,10 @@ const CitizenDashboard = () => {
         onClose={() => setSelectedReport(null)}
         onCancel={(id) => deleteMutation.mutate(id)}
         isCancelling={deleteMutation.isPending}
+        onRedispatch={(id) => redispatchMutation.mutate(id)}
+        isRedispatching={redispatchMutation.isPending}
+        onUpdateNoEnterprise={(id, data) => updateNoEnterpriseMutation.mutate({ id, data })}
+        isUpdatingNoEnterprise={updateNoEnterpriseMutation.isPending}
       />
     </DashboardLayout>
   );
