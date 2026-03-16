@@ -49,7 +49,6 @@ const Landing = () => {
           <div className="hidden items-center gap-6 md:flex">
             <a href="#features" className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">Tính năng</a>
             <a href="#how-it-works" className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">Cách hoạt động</a>
-            <a href="#accounts" className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">Demo</a>
           </div>
           <div className="flex items-center gap-3">
             <Link to="/login">
@@ -202,28 +201,11 @@ const Landing = () => {
 
       {/* Demo Accounts */}
       <section id="accounts" className="bg-eco-lightest py-20">
-        <div className="container mx-auto px-4">
-          <motion.div className="mb-10 text-center" {...fadeUp}>
-            <h2 className="mb-3 font-display text-3xl font-bold text-foreground">Tài khoản Demo</h2>
-            <p className="text-muted-foreground">Sử dụng các tài khoản sau để trải nghiệm từng vai trò</p>
-          </motion.div>
-          <div className="mx-auto grid max-w-3xl gap-4 sm:grid-cols-2">
-            {accounts.map((a, i) => (
-              <motion.div key={i} className="rounded-xl border border-border bg-card p-5 shadow-card" {...fadeUp} transition={{ delay: i * 0.1 }}>
-                <div className="mb-2 text-sm font-semibold text-primary">{a.role}</div>
-                <div className="space-y-1 text-sm text-muted-foreground">
-                  <div>Email: <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground">{a.email}</code></div>
-                  <div>Mật khẩu: <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground">{a.password}</code></div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
           <div className="mt-8 text-center">
             <Link to="/login">
               <Button size="lg">Đăng nhập ngay <ArrowRight className="ml-1 h-5 w-5" /></Button>
             </Link>
           </div>
-        </div>
       </section>
 
       {/* Footer */}
