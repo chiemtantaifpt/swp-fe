@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Package, Truck, Users, BarChart3, CheckCircle, XCircle,
   Clock, MapPin, Settings, Plus, Pencil, Trash2, Search,
-  MapPinned, Recycle, AlertCircle, Eye, Image as ImageIcon, ShieldCheck,
+  MapPinned, Recycle, AlertCircle, Eye, EyeOff, Image as ImageIcon, ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -273,6 +273,7 @@ const EnterpriseDashboard = () => {
   const [colEmail, setColEmail]               = useState("");
   const [colPassword, setColPassword]         = useState("");
   const [colFullName, setColFullName]         = useState("");
+  const [showColPassword, setShowColPassword] = useState(false);
 
   // ── service area state ──
   const [areaSearch, setAreaSearch]           = useState("");
@@ -1300,7 +1301,7 @@ const EnterpriseDashboard = () => {
         </DialogContent>
       </Dialog>
       {/* ── Dialog: Create Collector ── */}
-      <Dialog open={collectorDialog} onOpenChange={(o) => { if (!o) { setCollectorDialog(false); setColEmail(""); setColPassword(""); setColFullName(""); } }}>
+      <Dialog open={collectorDialog} onOpenChange={(o) => { if (!o) { setCollectorDialog(false); setColEmail(""); setColPassword(""); setColFullName(""); setShowColPassword(false); } }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Thêm collector</DialogTitle>
@@ -1326,14 +1327,26 @@ const EnterpriseDashboard = () => {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="colPassword">Mật khẩu <span className="text-destructive">*</span></Label>
-              <Input
-                id="colPassword"
-                type="password"
-                placeholder="Tối thiểu 6 ký tự"
-                value={colPassword}
-                onChange={(e) => setColPassword(e.target.value)}
-              />
+              <Label htmlFor="colPassword">M???t kh???u <span className="text-destructive">*</span></Label>
+              <div className="relative">
+                <Input
+                  id="colPassword"
+                  type={showColPassword ? "text" : "password"}
+                  placeholder="T???i thi???u 6 k?? t???"
+                  value={colPassword}
+                  onChange={(e) => setColPassword(e.target.value)}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setShowColPassword((v) => !v)}
+                  className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+                  aria-label={showColPassword ? "?n m?t kh?u" : "Hi?n m?t kh?u"}
+                >
+                  {showColPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setCollectorDialog(false)}>Hủy</Button>

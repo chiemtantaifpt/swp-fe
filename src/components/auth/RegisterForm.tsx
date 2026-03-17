@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, Loader2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth, UserRole } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { districtService, wardService } from "@/services/enterpriseConfig";
 
 type FieldErrors = Partial<
   Record<
@@ -28,6 +30,9 @@ export default function RegisterForm() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [role, setRole] = useState<UserRole>("Citizen");
+  const [showLocationFields, setShowLocationFields] = useState(false);
+  const [districtId, setDistrictId] = useState("");
+  const [wardId, setWardId] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -35,6 +40,21 @@ export default function RegisterForm() {
 
   const { register } = useAuth();
   const navigate = useNavigate();
+  const isCitizen = role === "Citizen";
+
+  const { data: districtPage } = useQuery({
+    queryKey: ["registerDistricts"],
+    queryFn: () => districtService.getAll({ PageNumber: 1, PageSize: 100 }),
+    enabled: isCitizen && showLocationFields,
+  });
+  const districts = districtPage?.items ?? [];
+
+  const { data: wardPage } = useQuery({
+    queryKey: ["registerWards", districtId],
+    queryFn: () => wardService.getAll({ DistrictId: districtId, PageNumber: 1, PageSize: 100 }),
+    enabled: isCitizen && showLocationFields && !!districtId,
+  });
+  const wards = wardPage?.items ?? [];
 
   const clearError = (field: keyof FieldErrors) =>
     setErrors((prev) => ({ ...prev, [field]: undefined }));
@@ -65,7 +85,19 @@ export default function RegisterForm() {
 
     setLoading(true);
     try {
-      await register(name, phone, email, password, role);
+      await register(
+        name,
+        phone,
+        email,
+        password,
+        role,
+        isCitizen && (districtId || wardId)
+          ? {
+              districtId: districtId || undefined,
+              wardId: wardId || undefined,
+            }
+          : undefined
+      );
       toast.success("Đăng ký thành công! Vui lòng đăng nhập.");
       navigate("/login");
     } catch (error) {
@@ -215,7 +247,19 @@ export default function RegisterForm() {
 
           <div className="space-y-1.5">
             <Label>Vai trò</Label>
-            <Select value={role} onValueChange={(v) => setRole(v as UserRole)} disabled={loading}>
+            <Select
+              value={role}
+              onValueChange={(v) => {
+                const nextRole = v as UserRole;
+                setRole(nextRole);
+                if (nextRole !== "Citizen") {
+                  setShowLocationFields(false);
+                  setDistrictId("");
+                  setWardId("");
+                }
+              }}
+              disabled={loading}
+            >
               <SelectTrigger className="border-white/45 bg-white/45 focus:ring-2 focus:ring-primary/40">
                 <SelectValue />
               </SelectTrigger>
@@ -226,6 +270,81 @@ export default function RegisterForm() {
               </SelectContent>
             </Select>
           </div>
+          {isCitizen && (
+            <div className="space-y-3 rounded-2xl border border-white/35 bg-white/20 p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-foreground">{"Hoàn thiện hồ sơ ngay"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {"Giúp hệ thống hiển thị bảng xếp hạng phù hợp với khu vực của bạn."}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (showLocationFields) {
+                      setDistrictId("");
+                      setWardId("");
+                    }
+                    setShowLocationFields((prev) => !prev);
+                  }}
+                  disabled={loading}
+                >
+                  {showLocationFields ? "Bỏ qua lúc này" : "Thêm quận/phường"}
+                </Button>
+              </div>
+
+              {showLocationFields && (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label>{"Quận / Huyện"}</Label>
+                    <Select
+                      value={districtId}
+                      onValueChange={(value) => {
+                        setDistrictId(value);
+                        setWardId("");
+                      }}
+                      disabled={loading}
+                    >
+                      <SelectTrigger className="border-white/45 bg-white/45 focus:ring-2 focus:ring-primary/40">
+                        <SelectValue placeholder="Chọn quận/huyện" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {districts.map((district) => (
+                          <SelectItem key={district.id} value={district.id}>
+                            {district.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label>{"Phường / Xã"}</Label>
+                    <Select
+                      value={wardId}
+                      onValueChange={setWardId}
+                      disabled={loading || !districtId}
+                    >
+                      <SelectTrigger className="border-white/45 bg-white/45 focus:ring-2 focus:ring-primary/40">
+                        <SelectValue placeholder={districtId ? "Chọn phường/xã" : "Chọn quận/huyện trước"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {wards.map((ward) => (
+                          <SelectItem key={ward.id} value={ward.id}>
+                            {ward.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
 
           <Button
             type="button"

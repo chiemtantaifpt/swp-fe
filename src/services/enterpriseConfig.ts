@@ -90,6 +90,12 @@ export interface District {
   createdTime: string;
 }
 
+export interface CreateDistrictDto {
+  name: string;
+  code: string;
+  provinceCode: string;
+}
+
 export interface Ward {
   id: string;
   districtId: string;
@@ -99,9 +105,30 @@ export interface Ward {
   createdTime: string;
 }
 
+export interface CreateWardDto {
+  districtId: string;
+  name: string;
+  code: string;
+}
+
+export interface CreateDistrictThenWardInput {
+  district: CreateDistrictDto;
+  ward: Omit<CreateWardDto, "districtId">;
+}
+
+export interface CreateDistrictThenWardResult {
+  district: District;
+  ward: Ward;
+}
+
 export const districtService = {
   getAll: async (params?: { ProvinceCode?: string; Keyword?: string; PageNumber?: number; PageSize?: number }): Promise<PagedResult<District>> => {
     const res = await api.get<PagedResult<District>>("/District", { params });
+    return res.data;
+  },
+
+  create: async (body: CreateDistrictDto): Promise<District> => {
+    const res = await api.post<District>("/District", body);
     return res.data;
   },
 };
@@ -111,6 +138,29 @@ export const wardService = {
     const res = await api.get<PagedResult<Ward>>("/Ward", { params });
     return res.data;
   },
+
+  create: async (body: CreateWardDto): Promise<Ward> => {
+    const res = await api.post<Ward>("/Ward", body);
+    return res.data;
+  },
+};
+
+export const createDistrictThenWard = async (
+  input: CreateDistrictThenWardInput
+): Promise<CreateDistrictThenWardResult> => {
+  try {
+    const district = await districtService.create(input.district);
+    const ward = await wardService.create({
+      districtId: district.id,
+      name: input.ward.name,
+      code: input.ward.code,
+    });
+
+    return { district, ward };
+  } catch (error) {
+    console.error("createDistrictThenWard failed:", error);
+    throw error;
+  }
 };
 
 // ─────────────────────────────────────────────

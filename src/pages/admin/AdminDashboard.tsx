@@ -20,6 +20,12 @@ import { enterpriseApprovalService } from "@/services/enterpriseApproval";
 import { wasteTypeService, WasteType, WASTE_CATEGORIES } from "@/services/wasteType";
 import { complaintService } from "@/services/complaint";
 import { disputeResolutionService } from "@/services/disputeResolution";
+import { pointRuleService, PointRule } from "@/services/pointRule";
+import {
+  createDistrictThenWard,
+  districtService,
+  wardService,
+} from "@/services/enterpriseConfig";
 
 const mockUsers = [
   { id: "1", name: "Nguyễn Văn An", email: "citizen@test.com", role: "citizen", status: "active", reports: 12 },
@@ -47,6 +53,15 @@ const complaintStatusMap: Record<string, { label: string; variant: "default" | "
 interface WasteTypeFormProps {
   open: boolean;
   editing: WasteType | null;
+  onClose: () => void;
+}
+
+interface PointRuleFormProps {
+  open: boolean;
+  editing: PointRule | null;
+  wasteTypes: WasteType[];
+  existingWasteTypeIds: string[];
+  presetWasteTypeId?: string;
   onClose: () => void;
 }
 
@@ -157,6 +172,145 @@ const WasteTypeFormDialog = ({ open, editing, onClose }: WasteTypeFormProps) => 
   );
 };
 
+const PointRuleFormDialog = ({
+  open,
+  editing,
+  wasteTypes,
+  existingWasteTypeIds,
+  presetWasteTypeId,
+  onClose,
+}: PointRuleFormProps) => {
+  const qc = useQueryClient();
+  const isEdit = !!editing;
+  const [wasteTypeId, setWasteTypeId] = useState("");
+  const [basePoint, setBasePoint] = useState("0");
+  const [isActive, setIsActive] = useState(true);
+
+  useEffect(() => {
+    if (open) {
+      setWasteTypeId(editing?.wasteTypeId ?? presetWasteTypeId ?? "");
+      setBasePoint(String(editing?.basePoint ?? 0));
+      setIsActive(editing?.isActive ?? true);
+    }
+  }, [open, editing, presetWasteTypeId]);
+
+  const availableWasteTypes = wasteTypes.filter((wt) =>
+    isEdit ? wt.id === editing?.wasteTypeId || !existingWasteTypeIds.includes(wt.id) : !existingWasteTypeIds.includes(wt.id)
+  );
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      pointRuleService.create({
+        wasteTypeId,
+        basePoint: Number(basePoint),
+      }),
+    onSuccess: () => {
+      toast.success("Đã tạo point rule thành công");
+      qc.invalidateQueries({ queryKey: ["pointRules"] });
+      onClose();
+    },
+    onError: () => toast.error("Tạo point rule thất bại"),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: () =>
+      pointRuleService.update(editing!.wasteTypeId, {
+        basePoint: Number(basePoint),
+        isActive,
+      }),
+    onSuccess: () => {
+      toast.success("Đã cập nhật point rule thành công");
+      qc.invalidateQueries({ queryKey: ["pointRules"] });
+      onClose();
+    },
+    onError: () => toast.error("Cập nhật point rule thất bại"),
+  });
+
+  const isPending = createMutation.isPending || updateMutation.isPending;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isEdit && !wasteTypeId) {
+      toast.error("Vui lòng chọn loại rác");
+      return;
+    }
+    if (basePoint.trim() === "" || Number.isNaN(Number(basePoint))) {
+      toast.error("Vui lòng nhập số điểm hợp lệ");
+      return;
+    }
+    if (Number(basePoint) < 0) {
+      toast.error("Điểm cơ bản không được âm");
+      return;
+    }
+    if (isEdit) updateMutation.mutate();
+    else createMutation.mutate();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display">
+            {isEdit ? "Cập nhật point rule" : "Thêm point rule"}
+          </DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="pointRuleWasteType">Loại rác</Label>
+            <Select value={wasteTypeId} onValueChange={setWasteTypeId} disabled={isEdit}>
+              <SelectTrigger id="pointRuleWasteType">
+                <SelectValue placeholder="Chọn loại rác" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableWasteTypes.map((wt) => (
+                  <SelectItem key={wt.id} value={wt.id}>
+                    {wt.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="basePoint">Điểm cơ bản</Label>
+            <Input
+              id="basePoint"
+              type="number"
+              min="0"
+              step="1"
+              value={basePoint}
+              onChange={(e) => setBasePoint(e.target.value)}
+              placeholder="VD: 10"
+            />
+          </div>
+
+          {isEdit && (
+            <div className="space-y-1.5">
+              <Label htmlFor="pointRuleStatus">Trạng thái</Label>
+              <Select value={isActive ? "true" : "false"} onValueChange={(value) => setIsActive(value === "true")}>
+                <SelectTrigger id="pointRuleStatus">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="true">Đang áp dụng</SelectItem>
+                  <SelectItem value="false">Ngừng áp dụng</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Đang lưu..." : isEdit ? "Lưu thay đổi" : "Thêm rule"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 const formatDate = (raw?: string | null): string => {
   if (!raw) return "-";
@@ -183,7 +337,23 @@ const AdminDashboard = () => {
   const [complaintStatusFilter, setComplaintStatusFilter] = useState<string>("all");
   const [selectedComplaintId, setSelectedComplaintId] = useState<string | null>(null);
   const [complaintDetailOpen, setComplaintDetailOpen] = useState(false);
-  const [resolutionNote, setResolutionNote] = useState("");
+  const [pointRuleFormOpen, setPointRuleFormOpen] = useState(false);
+  const [editingPointRule, setEditingPointRule] = useState<PointRule | null>(null);
+  const [selectedPointRuleWasteTypeId, setSelectedPointRuleWasteTypeId] = useState("");
+  const [districtDialogOpen, setDistrictDialogOpen] = useState(false);
+  const [wardDialogOpen, setWardDialogOpen] = useState(false);
+  const [quickLocationDialogOpen, setQuickLocationDialogOpen] = useState(false);
+  const [districtName, setDistrictName] = useState("");
+  const [districtCode, setDistrictCode] = useState("");
+  const [provinceCode, setProvinceCode] = useState("79");
+  const [wardDistrictId, setWardDistrictId] = useState("");
+  const [wardName, setWardName] = useState("");
+  const [wardCode, setWardCode] = useState("");
+  const [quickDistrictName, setQuickDistrictName] = useState("");
+  const [quickDistrictCode, setQuickDistrictCode] = useState("");
+  const [quickProvinceCode, setQuickProvinceCode] = useState("79");
+  const [quickWardName, setQuickWardName] = useState("");
+  const [quickWardCode, setQuickWardCode] = useState("");
 
   const {
     data: enterpriseApprovals,
@@ -245,7 +415,6 @@ const AdminDashboard = () => {
       }),
     onSuccess: (_, variables) => {
       toast.success("Đã ghi nhận kết quả xử lý khiếu nại");
-      setResolutionNote("");
       qc.invalidateQueries({ queryKey: ["adminComplaints"] });
       qc.invalidateQueries({ queryKey: ["adminComplaintDetail", variables.complaintId] });
       qc.invalidateQueries({ queryKey: ["complaintResolutions", variables.complaintId] });
@@ -330,14 +499,12 @@ const AdminDashboard = () => {
 
   const openComplaintDetail = (complaintId: string) => {
     setSelectedComplaintId(complaintId);
-    setResolutionNote("");
     setComplaintDetailOpen(true);
   };
 
   const closeComplaintDetail = () => {
     setComplaintDetailOpen(false);
     setSelectedComplaintId(null);
-    setResolutionNote("");
   };
 
   const getComplaintTitle = (content: string) => {
@@ -350,6 +517,30 @@ const AdminDashboard = () => {
     queryKey: ["wasteTypes"],
     queryFn: () => wasteTypeService.getAll(),
   });
+  const { data: pointRules = [], isLoading: pointRuleLoading, isError: pointRuleError } = useQuery({
+    queryKey: ["pointRules"],
+    queryFn: () => pointRuleService.getAll(),
+  });
+  const pointRuleWasteTypeIds = pointRules.map((rule) => rule.wasteTypeId);
+  const pointRuleItems = wasteTypes.map((wt) => {
+    const rule = pointRules.find((item) => item.wasteTypeId === wt.id) ?? null;
+    return {
+      wasteType: wt,
+      rule,
+    };
+  });
+
+  const { data: districtPage, isLoading: districtLoading } = useQuery({
+    queryKey: ["districts", "admin"],
+    queryFn: () => districtService.getAll({ PageNumber: 1, PageSize: 100 }),
+  });
+  const districts = districtPage?.items ?? [];
+
+  const { data: wardPage, isLoading: wardLoading } = useQuery({
+    queryKey: ["wards", "admin"],
+    queryFn: () => wardService.getAll({ PageNumber: 1, PageSize: 100 }),
+  });
+  const wards = wardPage?.items ?? [];
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => wasteTypeService.delete(id),
@@ -360,6 +551,69 @@ const AdminDashboard = () => {
     onError: () => toast.error("Xóa loại rác thất bại"),
   });
 
+  const createDistrictMutation = useMutation({
+    mutationFn: () =>
+      districtService.create({
+        name: districtName.trim(),
+        code: districtCode.trim(),
+        provinceCode: provinceCode.trim(),
+      }),
+    onSuccess: () => {
+      toast.success("Đã tạo quận/huyện thành công");
+      qc.invalidateQueries({ queryKey: ["districts", "admin"] });
+      setDistrictDialogOpen(false);
+      setDistrictName("");
+      setDistrictCode("");
+      setProvinceCode("79");
+    },
+    onError: () => toast.error("Tạo quận/huyện thất bại"),
+  });
+
+  const createWardMutation = useMutation({
+    mutationFn: () =>
+      wardService.create({
+        districtId: wardDistrictId,
+        name: wardName.trim(),
+        code: wardCode.trim(),
+      }),
+    onSuccess: () => {
+      toast.success("Đã tạo phường/xã thành công");
+      qc.invalidateQueries({ queryKey: ["wards", "admin"] });
+      setWardDialogOpen(false);
+      setWardDistrictId("");
+      setWardName("");
+      setWardCode("");
+    },
+    onError: () => toast.error("Tạo phường/xã thất bại"),
+  });
+
+  const createDistrictThenWardMutation = useMutation({
+    mutationFn: () =>
+      createDistrictThenWard({
+        district: {
+          name: quickDistrictName.trim(),
+          code: quickDistrictCode.trim(),
+          provinceCode: quickProvinceCode.trim(),
+        },
+        ward: {
+          name: quickWardName.trim(),
+          code: quickWardCode.trim(),
+        },
+      }),
+    onSuccess: () => {
+      toast.success("Đã tạo quận/huyện và phường/xã thành công");
+      qc.invalidateQueries({ queryKey: ["districts", "admin"] });
+      qc.invalidateQueries({ queryKey: ["wards", "admin"] });
+      setQuickLocationDialogOpen(false);
+      setQuickDistrictName("");
+      setQuickDistrictCode("");
+      setQuickProvinceCode("79");
+      setQuickWardName("");
+      setQuickWardCode("");
+    },
+    onError: () => toast.error("Tạo nhanh địa bàn thất bại"),
+  });
+
   const handleEdit = (wt: WasteType) => {
     setEditingWasteType(wt);
     setFormOpen(true);
@@ -368,6 +622,24 @@ const AdminDashboard = () => {
   const handleAddNew = () => {
     setEditingWasteType(null);
     setFormOpen(true);
+  };
+
+  const handleAddPointRule = () => {
+    setEditingPointRule(null);
+    setSelectedPointRuleWasteTypeId("");
+    setPointRuleFormOpen(true);
+  };
+
+  const handleAddPointRuleForWasteType = (wasteTypeId: string) => {
+    setEditingPointRule(null);
+    setSelectedPointRuleWasteTypeId(wasteTypeId);
+    setPointRuleFormOpen(true);
+  };
+
+  const handleEditPointRule = (rule: PointRule) => {
+    setEditingPointRule(rule);
+    setSelectedPointRuleWasteTypeId("");
+    setPointRuleFormOpen(true);
   };
 
   const handleDelete = (wt: WasteType) => {
@@ -413,6 +685,7 @@ const AdminDashboard = () => {
         <TabsList>
           <TabsTrigger value="users">Quản lý người dùng</TabsTrigger>
           <TabsTrigger value="wastetype">Loại rác</TabsTrigger>
+          <TabsTrigger value="point-rule">Point rule</TabsTrigger>
           <TabsTrigger value="complaints">Khiếu nại</TabsTrigger>
           <TabsTrigger value="overview">Tổng quan</TabsTrigger>
         </TabsList>
@@ -699,6 +972,69 @@ const AdminDashboard = () => {
           </Card>
         </TabsContent>
 
+        <TabsContent value="point-rule">
+          <Card className="shadow-card">
+            <CardHeader>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle className="font-display text-base">Cấu hình point rule</CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Thiết lập điểm cơ bản cho từng loại rác. Backend sẽ dùng rule này khi cộng điểm cho công dân.
+                  </p>
+                </div>
+                <Button size="sm" onClick={handleAddPointRule}>
+                  <Plus className="mr-1 h-4 w-4" /> Thêm point rule
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {wtLoading || pointRuleLoading ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">Đang tải point rule...</p>
+              ) : pointRuleError ? (
+                <p className="py-8 text-center text-sm text-destructive">Không thể tải point rule</p>
+              ) : pointRuleItems.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">Chưa có loại rác để cấu hình điểm</p>
+              ) : (
+                <div className="space-y-2">
+                  {pointRuleItems.map(({ wasteType, rule }) => (
+                    <div
+                      key={wasteType.id}
+                      className="flex flex-col gap-3 rounded-lg border border-border p-4 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-medium text-foreground">{wasteType.name}</span>
+                          <Badge variant="outline">{WASTE_CATEGORIES[wasteType.category ?? 3] ?? "Khác"}</Badge>
+                          <Badge variant={rule ? (rule.isActive === false ? "secondary" : "default") : "outline"}>
+                            {rule ? (rule.isActive === false ? "Ngừng áp dụng" : "Đang áp dụng") : "Chưa có rule"}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {rule
+                            ? `Điểm cơ bản: ${rule.basePoint} điểm`
+                            : "Chưa cấu hình điểm cho loại rác này"}
+                        </p>
+                      </div>
+
+                      <div className="flex shrink-0 gap-2">
+                        {rule ? (
+                          <Button size="sm" variant="outline" onClick={() => handleEditPointRule(rule)}>
+                            <Pencil className="mr-1 h-3 w-3" /> Cập nhật
+                          </Button>
+                        ) : (
+                          <Button size="sm" onClick={() => handleAddPointRuleForWasteType(wasteType.id)}>
+                            <Plus className="mr-1 h-3 w-3" /> Tạo rule
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* ── Complaints Tab ─────────────────────────────────── */}
         <TabsContent value="complaints">
           <Card className="mb-4 shadow-card">
@@ -827,6 +1163,69 @@ const AdminDashboard = () => {
                 ))}
               </CardContent>
             </Card>
+            <Card className="shadow-card sm:col-span-2">
+              <CardHeader>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <CardTitle className="flex items-center gap-2 font-display text-base">
+                    <Package className="h-5 w-5 text-primary" /> Quản lý địa bàn
+                  </CardTitle>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setDistrictDialogOpen(true)}>
+                      <Plus className="mr-1 h-4 w-4" /> Thêm quận/huyện
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setWardDialogOpen(true)}>
+                      <Plus className="mr-1 h-4 w-4" /> Thêm phường/xã
+                    </Button>
+                    <Button size="sm" onClick={() => setQuickLocationDialogOpen(true)}>
+                      <Plus className="mr-1 h-4 w-4" /> Tạo nhanh cả hai
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-lg border border-border p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-sm font-medium text-foreground">Quận / Huyện</p>
+                    <Badge variant="outline">{districts.length}</Badge>
+                  </div>
+                  {districtLoading ? (
+                    <p className="text-sm text-muted-foreground">Đang tải quận/huyện...</p>
+                  ) : districts.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Chưa có quận/huyện nào.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {districts.slice(0, 6).map((district) => (
+                        <div key={district.id} className="rounded-md border border-border bg-muted/30 p-3 text-sm">
+                          <p className="font-medium text-foreground">{district.name}</p>
+                          <p className="text-xs text-muted-foreground">Mã: {district.code} · Tỉnh/TP: {district.provinceCode}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-border p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-sm font-medium text-foreground">Phường / Xã</p>
+                    <Badge variant="outline">{wards.length}</Badge>
+                  </div>
+                  {wardLoading ? (
+                    <p className="text-sm text-muted-foreground">Đang tải phường/xã...</p>
+                  ) : wards.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Chưa có phường/xã nào.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {wards.slice(0, 6).map((ward) => (
+                        <div key={ward.id} className="rounded-md border border-border bg-muted/30 p-3 text-sm">
+                          <p className="font-medium text-foreground">{ward.name}</p>
+                          <p className="text-xs text-muted-foreground">{ward.districtName} · Mã: {ward.code}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
       </Tabs>
@@ -866,39 +1265,6 @@ const AdminDashboard = () => {
                 </div>
                 <p className="text-sm text-foreground">{complaintDetail.content}</p>
               </div>
-
-              {complaintDetail.status === "InReview" && (
-                <div className="rounded-lg border border-border p-4">
-                  <div className="mb-3">
-                    <p className="text-sm font-medium text-foreground">Xử lý khiếu nại</p>
-                    <p className="text-xs text-muted-foreground">
-                      Khi xác nhận xử lý thành công, hệ thống sẽ tự chuyển trạng thái khiếu nại sang `Đã giải quyết`.
-                    </p>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="resolutionNote">Nội dung xử lý</Label>
-                      <Textarea
-                        id="resolutionNote"
-                        rows={4}
-                        value={resolutionNote}
-                        onChange={(e) => setResolutionNote(e.target.value)}
-                        placeholder="Nhập kết quả xử lý khiếu nại..."
-                        disabled={createResolutionMutation.isPending}
-                      />
-                    </div>
-                    <div className="flex justify-end">
-                      <Button
-                        disabled={createResolutionMutation.isPending || !resolutionNote.trim()}
-                        onClick={() => createResolutionMutation.mutate({ complaintId: complaintDetail.id, note: resolutionNote.trim() })}
-                      >
-                        <CheckCircle className="mr-1 h-4 w-4" />
-                        {createResolutionMutation.isPending ? "Đang xử lý..." : "Xác nhận xử lý"}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {complaintDetail.status === "Open" && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -981,6 +1347,143 @@ const AdminDashboard = () => {
         editing={editingWasteType}
         onClose={() => setFormOpen(false)}
       />
+
+      <PointRuleFormDialog
+        open={pointRuleFormOpen}
+        editing={editingPointRule}
+        wasteTypes={wasteTypes}
+        existingWasteTypeIds={pointRuleWasteTypeIds}
+        presetWasteTypeId={selectedPointRuleWasteTypeId}
+        onClose={() => {
+          setPointRuleFormOpen(false);
+          setEditingPointRule(null);
+          setSelectedPointRuleWasteTypeId("");
+        }}
+      />
+
+      <Dialog open={districtDialogOpen} onOpenChange={(open) => { if (!open) setDistrictDialogOpen(false); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display">Thêm quận/huyện</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="districtName">Tên quận/huyện</Label>
+              <Input id="districtName" value={districtName} onChange={(e) => setDistrictName(e.target.value)} placeholder="VD: Quận 1" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="districtCode">Mã quận/huyện</Label>
+              <Input id="districtCode" value={districtCode} onChange={(e) => setDistrictCode(e.target.value)} placeholder="VD: D1" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="provinceCode">Mã tỉnh/thành</Label>
+              <Input id="provinceCode" value={provinceCode} onChange={(e) => setProvinceCode(e.target.value)} placeholder="VD: 79" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDistrictDialogOpen(false)}>Hủy</Button>
+            <Button
+              disabled={createDistrictMutation.isPending || !districtName.trim() || !districtCode.trim() || !provinceCode.trim()}
+              onClick={() => createDistrictMutation.mutate()}
+            >
+              {createDistrictMutation.isPending ? "Đang tạo..." : "Tạo quận/huyện"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={wardDialogOpen} onOpenChange={(open) => { if (!open) setWardDialogOpen(false); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display">Thêm phường/xã</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="wardDistrictId">Quận / Huyện</Label>
+              <Select value={wardDistrictId} onValueChange={setWardDistrictId}>
+                <SelectTrigger id="wardDistrictId">
+                  <SelectValue placeholder="Chọn quận/huyện..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {districts.map((district) => (
+                    <SelectItem key={district.id} value={district.id}>{district.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="wardName">Tên phường/xã</Label>
+              <Input id="wardName" value={wardName} onChange={(e) => setWardName(e.target.value)} placeholder="VD: Phường 1" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="wardCode">Mã phường/xã</Label>
+              <Input id="wardCode" value={wardCode} onChange={(e) => setWardCode(e.target.value)} placeholder="VD: W1" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWardDialogOpen(false)}>Hủy</Button>
+            <Button
+              disabled={createWardMutation.isPending || !wardDistrictId || !wardName.trim() || !wardCode.trim()}
+              onClick={() => createWardMutation.mutate()}
+            >
+              {createWardMutation.isPending ? "Đang tạo..." : "Tạo phường/xã"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={quickLocationDialogOpen} onOpenChange={(open) => { if (!open) setQuickLocationDialogOpen(false); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display">Tạo nhanh quận/huyện và phường/xã</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-4 rounded-lg border border-border p-4">
+              <p className="text-sm font-medium text-foreground">Quận / Huyện</p>
+              <div className="space-y-1.5">
+                <Label htmlFor="quickDistrictName">Tên</Label>
+                <Input id="quickDistrictName" value={quickDistrictName} onChange={(e) => setQuickDistrictName(e.target.value)} placeholder="VD: Quận 1" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="quickDistrictCode">Mã</Label>
+                <Input id="quickDistrictCode" value={quickDistrictCode} onChange={(e) => setQuickDistrictCode(e.target.value)} placeholder="VD: D1" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="quickProvinceCode">Mã tỉnh/thành</Label>
+                <Input id="quickProvinceCode" value={quickProvinceCode} onChange={(e) => setQuickProvinceCode(e.target.value)} placeholder="VD: 79" />
+              </div>
+            </div>
+
+            <div className="space-y-4 rounded-lg border border-border p-4">
+              <p className="text-sm font-medium text-foreground">Phường / Xã</p>
+              <div className="space-y-1.5">
+                <Label htmlFor="quickWardName">Tên</Label>
+                <Input id="quickWardName" value={quickWardName} onChange={(e) => setQuickWardName(e.target.value)} placeholder="VD: Phường 1" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="quickWardCode">Mã</Label>
+                <Input id="quickWardCode" value={quickWardCode} onChange={(e) => setQuickWardCode(e.target.value)} placeholder="VD: W1" />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQuickLocationDialogOpen(false)}>Hủy</Button>
+            <Button
+              disabled={
+                createDistrictThenWardMutation.isPending ||
+                !quickDistrictName.trim() ||
+                !quickDistrictCode.trim() ||
+                !quickProvinceCode.trim() ||
+                !quickWardName.trim() ||
+                !quickWardCode.trim()
+              }
+              onClick={() => createDistrictThenWardMutation.mutate()}
+            >
+              {createDistrictThenWardMutation.isPending ? "Đang tạo..." : "Tạo nhanh"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>

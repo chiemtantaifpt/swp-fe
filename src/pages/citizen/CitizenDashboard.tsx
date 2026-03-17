@@ -21,6 +21,7 @@ import { wasteTypeService } from "@/services/wasteType";
 import { imageService } from "@/services/image";
 import { complaintService, Complaint } from "@/services/complaint";
 import { disputeResolutionService } from "@/services/disputeResolution";
+import { useCitizenPoint, useCitizenPointLeaderboard, useCitizenPointMyRank } from "@/hooks/useCitizenPoint";
 
 const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   PENDING: { label: "Chờ xử lý", variant: "secondary" },
@@ -42,14 +43,6 @@ const complaintTypeMap: Record<string, string> = {
   Feedback: "Phản hồi",
   Complaint: "Khiếu nại",
 };
-
-const mockLeaderboard = [
-  { rank: 1, name: "Trần Thị B", points: 520, district: "Quận 1" },
-  { rank: 2, name: "Nguyễn Văn An", points: 320, district: "Quận 1" },
-  { rank: 3, name: "Lê Văn C", points: 280, district: "Quận 1" },
-  { rank: 4, name: "Phạm Thị D", points: 210, district: "Quận 1" },
-  { rank: 5, name: "Hoàng Văn E", points: 180, district: "Quận 1" },
-];
 
 const CitizenComplaintCard = ({
   complaint,
@@ -437,6 +430,41 @@ const CitizenDashboard = () => {
     const status = c.status?.toUpperCase();
     return status === "OPEN" || status === "INREVIEW";
   }).length;
+  const {
+    data: citizenPointSummary,
+    isLoading: citizenPointSummaryLoading,
+    isError: citizenPointSummaryError,
+  } = useCitizenPoint(user?.id);
+  const {
+    data: citizenPointMyRank,
+    isLoading: citizenPointMyRankLoading,
+    isError: citizenPointMyRankError,
+  } = useCitizenPointMyRank("AllTime");
+  const {
+    data: citizenPointLeaderboard = [],
+    isLoading: citizenPointLeaderboardLoading,
+    isError: citizenPointLeaderboardError,
+  } = useCitizenPointLeaderboard({ period: "AllTime", topCount: 10 });
+  const stats = [
+    { icon: MapPin, label: "Báo cáo", value: totalReports.toString(), color: "bg-eco-light" },
+    { icon: Clock, label: "Đang chờ", value: pendingReports.toString(), color: "bg-eco-medium" },
+    {
+      icon: Award,
+      label: "Điểm thưởng",
+      value: citizenPointSummaryLoading ? "..." : citizenPointSummaryError ? "--" : String(citizenPointSummary?.totalPoints ?? 0),
+      color: "bg-eco-teal",
+    },
+    {
+      icon: TrendingUp,
+      label: "Xếp hạng",
+      value: citizenPointMyRankLoading ? "..." : citizenPointMyRankError ? "--" : citizenPointMyRank?.rank ? `#${citizenPointMyRank.rank}` : "Chưa có",
+      color: "bg-eco-light",
+    },
+  ];
+  const leaderboardLocationLabel =
+    citizenPointLeaderboard.find((item) => item.districtName)?.districtName ||
+    citizenPointLeaderboard.find((item) => item.wardName)?.wardName ||
+    "Toàn hệ thống";
 
   return (
     <DashboardLayout>
@@ -447,12 +475,7 @@ const CitizenDashboard = () => {
 
       {/* Stats */}
       <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          { icon: MapPin, label: "Báo cáo", value: totalReports.toString(), color: "bg-eco-light" },
-          { icon: Clock, label: "Đang chờ", value: pendingReports.toString(), color: "bg-eco-medium" },
-          { icon: Award, label: "Điểm thưởng", value: user?.points?.toString() || "0", color: "bg-eco-teal" },
-          { icon: TrendingUp, label: "Xếp hạng", value: "#2", color: "bg-eco-light" },
-        ].map((s, i) => (
+        {stats.map((s, i) => (
           <Card key={i} className="shadow-card">
             <CardContent className="flex items-center gap-4 p-4">
               <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${s.color}`}>
@@ -928,24 +951,40 @@ const CitizenDashboard = () => {
           <Card className="shadow-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 font-display">
-                <Trophy className="h-5 w-5 text-primary" /> Bảng xếp hạng — Quận 1
+                <Trophy className="h-5 w-5 text-primary" /> Bảng xếp hạng - {leaderboardLocationLabel}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {mockLeaderboard.map(l => (
-                  <div key={l.rank} className={`flex items-center justify-between rounded-lg p-3 ${l.name === user?.name ? "bg-eco-light" : "bg-muted/50"}`}>
-                    <div className="flex items-center gap-3">
-                      <div className={`flex h-8 w-8 items-center justify-center rounded-full font-display text-sm font-bold ${l.rank <= 3 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
-                        {l.rank}
+              {citizenPointLeaderboardLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Đang tải bảng xếp hạng...
+                </div>
+              ) : citizenPointLeaderboardError ? (
+                <p className="text-sm text-destructive">Không thể tải bảng xếp hạng.</p>
+              ) : citizenPointLeaderboard.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Chưa có dữ liệu xếp hạng.</p>
+              ) : (
+                <div className="space-y-3">
+                  {citizenPointLeaderboard.map((item, index) => {
+                    const rank = item.rank ?? index + 1;
+                    const isCurrentUser = item.citizenId === user?.id;
+
+                    return (
+                      <div key={`${item.citizenId || rank}-${index}`} className={`flex items-center justify-between rounded-lg p-3 ${isCurrentUser ? "bg-eco-light" : "bg-muted/50"}`}>
+                        <div className="flex items-center gap-3">
+                          <div className={`flex h-8 w-8 items-center justify-center rounded-full font-display text-sm font-bold ${rank <= 3 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                            {rank}
+                          </div>
+                          <span className="text-sm font-medium text-foreground">{item.citizenName || "Ẩn danh"}</span>
+                          {isCurrentUser && <Badge variant="outline" className="text-xs">Bạn</Badge>}
+                        </div>
+                        <span className="font-display text-sm font-bold text-primary">{item.totalPoints} điểm</span>
                       </div>
-                      <span className="text-sm font-medium text-foreground">{l.name}</span>
-                      {l.name === user?.name && <Badge variant="outline" className="text-xs">Bạn</Badge>}
-                    </div>
-                    <span className="font-display text-sm font-bold text-primary">{l.points} điểm</span>
-                  </div>
-                ))}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

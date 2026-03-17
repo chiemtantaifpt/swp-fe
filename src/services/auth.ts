@@ -14,6 +14,8 @@ export interface RegisterRequest {
   email: string;
   password: string;
   role: UserRole;
+  wardId?: string;
+  districtId?: string;
 }
 
 // Actual backend response shape — BE wraps data: { data: { accessToken, ... } }
@@ -149,7 +151,8 @@ export const authService = {
     email: string,
     password: string,
     role: UserRole,
-    enterpriseInfo?: EnterpriseInfo
+    enterpriseInfo?: EnterpriseInfo,
+    location?: { districtId?: string; wardId?: string }
   ): Promise<AuthResponse> => {
     try {
       const response = await api.post<AuthResponse>("/auth/register", {
@@ -158,6 +161,8 @@ export const authService = {
         email,
         password,
         role,
+        ...(location?.districtId ? { districtId: location.districtId } : {}),
+        ...(location?.wardId ? { wardId: location.wardId } : {}),
         ...(enterpriseInfo ? { enterpriseInfo } : {}),
       });
       return response.data;

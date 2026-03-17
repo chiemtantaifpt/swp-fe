@@ -175,7 +175,6 @@ const CollectorDashboard = () => {
           ) : activeTasks.length === 0 ? (
             <Card className="shadow-card">
               <CardContent className="p-8 text-center">
-                <CheckCircle className="mx-auto mb-2 h-12 w-12 text-eco-medium" />
                 <p className="text-muted-foreground">Tất cả công việc đã hoàn thành! 🎉</p>
               </CardContent>
             </Card>
