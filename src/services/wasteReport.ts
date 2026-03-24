@@ -16,6 +16,7 @@ export type RejectionReason = "WrongWasteType" | "ImageNotClear";
 export interface WasteReport {
   id: string;
   citizenId?: string;
+  collectionRequestId?: string | null;
   description?: string;
   latitude?: number;
   longitude?: number;

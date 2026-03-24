@@ -1,15 +1,15 @@
 export interface BaseResponse<TData> {
   data: TData;
   message: string | null;
-  statusCode: number;
+  statusCode: number | string;
   code: string;
 }
 
 export class ApiResponseError extends Error {
-  statusCode?: number;
+  statusCode?: number | string;
   code?: string;
 
-  constructor(message: string, options?: { statusCode?: number; code?: string }) {
+  constructor(message: string, options?: { statusCode?: number | string; code?: string }) {
     super(message);
     this.name = "ApiResponseError";
     this.statusCode = options?.statusCode;
@@ -31,4 +31,3 @@ export const unwrapBaseResponse = <TData>(response: BaseResponse<TData>): TData 
 
   return response.data;
 };
-

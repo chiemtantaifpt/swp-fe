@@ -26,6 +26,9 @@ import { useCitizenPoint, useCitizenPointLeaderboard, useCitizenPointMyRank } fr
 const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   PENDING: { label: "Chờ xử lý", variant: "secondary" },
   PROCESSING: { label: "Đã tiếp nhận", variant: "outline" },
+  ONTHEWAY: { label: "\u0110ang \u0111\u1ebfn l\u1ea5y", variant: "outline" },
+  COLLECTED: { label: "\u0110\u00e3 thu gom", variant: "default" },
+  VERIFIED: { label: "\u0048\u006f\u00e0\u006e\u0020\u0074\u0068\u00e0\u006e\u0068", variant: "default" },
   ASSIGNED: { label: "Đã điều phối", variant: "default" },
   COMPLETED: { label: "Hoàn thành", variant: "default" },
   REJECTED: { label: "Từ chối", variant: "destructive" },
@@ -42,6 +45,13 @@ const complaintStatusMap: Record<string, { label: string; variant: "default" | "
 const complaintTypeMap: Record<string, string> = {
   Feedback: "Phản hồi",
   Complaint: "Khiếu nại",
+};
+
+const suggestedCategoryMap: Record<string, { category: number; label: string }> = {
+  Organic: { category: 0, label: "Hữu cơ" },
+  Recyclable: { category: 1, label: "Tái chế" },
+  Hazardous: { category: 2, label: "Nguy hại" },
+  Other: { category: 3, label: "Khác" },
 };
 
 const CitizenComplaintCard = ({
@@ -87,11 +97,15 @@ const CitizenDashboard = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const skipImageCleanupOnCloseRef = useRef(false);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [uploadedImages, setUploadedImages] = useState<Array<{ url: string; publicId: string }>>([]);
   const [mapPickerOpen, setMapPickerOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<WasteReport | null>(null);
   const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
+  const [imageSuggestion, setImageSuggestion] = useState<{ categoryLabel?: string; wasteTypeId?: string | null } | null>(null);
+  const [isUploadingImages, setIsUploadingImages] = useState(false);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [complaintDialogOpen, setComplaintDialogOpen] = useState(false);
   const [complaintReport, setComplaintReport] = useState<WasteReport | null>(null);
@@ -122,13 +136,23 @@ const CitizenDashboard = () => {
     latitude: undefined as number | undefined,
     longitude: undefined as number | undefined,
   });
+  const cleanupUploadedImages = async (images: Array<{ url: string; publicId: string }>) => {
+    await Promise.allSettled(
+      images
+        .filter((image) => image.publicId)
+        .map((image) => imageService.deleteOne(image.publicId))
+    );
+  };
+
   const resetForm = () => {
     setForm({ description: "", address: "", latitude: undefined, longitude: undefined });
     setImageFiles([]);
+    setUploadedImages([]);
     setSelectedWastes([]);
     setWtSearch("");
     setSelectedCategory(null);
     setLocationName(null);
+    setImageSuggestion(null);
   };
 
   // Fetch danh sách loại rác cho dropdown (chỉ active)
@@ -137,6 +161,149 @@ const CitizenDashboard = () => {
     queryFn: () => wasteTypeService.getAll(),
   });
   const wasteTypes = allWasteTypes.filter((w) => w.isActive !== false);
+
+  const applyImageSuggestion = (suggestedCategory?: string | null, suggestedWasteTypeId?: string | null) => {
+    if (suggestedCategory && suggestedCategoryMap[suggestedCategory]) {
+      const suggestion = suggestedCategoryMap[suggestedCategory];
+      setSelectedCategory(suggestion.category);
+      setImageSuggestion({
+        categoryLabel: suggestion.label,
+        wasteTypeId: suggestedWasteTypeId ?? null,
+      });
+    } else {
+      setImageSuggestion(
+        suggestedWasteTypeId
+          ? {
+              wasteTypeId: suggestedWasteTypeId,
+            }
+          : null
+      );
+    }
+
+    if (suggestedWasteTypeId) {
+      const suggestedWasteType = wasteTypes.find((item) => item.id === suggestedWasteTypeId);
+      setSelectedWastes((prev) => {
+        if (prev.some((item) => item.wasteTypeId === suggestedWasteTypeId)) return prev;
+        if (prev.length >= 5) return prev;
+        return [...prev, { wasteTypeId: suggestedWasteTypeId, quantity: 1, note: "" }];
+      });
+
+      toast.success(
+        suggestedWasteType
+          ? `Hệ thống gợi ý loại rác: ${suggestedWasteType.name}`
+          : "Hệ thống đã gợi ý sẵn một loại rác phù hợp"
+      );
+      return;
+    }
+
+    if (suggestedCategory && suggestedCategoryMap[suggestedCategory]) {
+      toast.success(`Hệ thống gợi ý nhóm rác: ${suggestedCategoryMap[suggestedCategory].label}`);
+    }
+  };
+
+  const handleSelectImages = async (files: File[]) => {
+    if (files.length === 0) return;
+    if (imageFiles.length + files.length > 5) {
+      toast.error("Ch??? ???????c t???i l??n t???i ??a 5 ???nh");
+      return;
+    }
+
+    setIsUploadingImages(true);
+    try {
+      if (files.length === 1) {
+        const result = await imageService.uploadOne(files[0]);
+        setImageFiles((prev) => [...prev, files[0]]);
+        setUploadedImages((prev) => [...prev, { url: result.url, publicId: result.publicId }]);
+        applyImageSuggestion(result.suggestedCategory, result.suggestedWasteTypeId);
+      } else {
+        const result = await imageService.uploadMultiple(files);
+        const fileBuckets = new Map<string, File[]>();
+
+        files.forEach((file) => {
+          const bucket = fileBuckets.get(file.name) ?? [];
+          bucket.push(file);
+          fileBuckets.set(file.name, bucket);
+        });
+
+        const successfulResults = result.results.filter((item) => item.url && item.publicId);
+        const failedResults = result.results.filter((item) => item.error);
+        const successfulFiles = successfulResults
+          .map((item) => {
+            const bucket = fileBuckets.get(item.fileName);
+            return bucket?.shift() ?? null;
+          })
+          .filter((file): file is File => !!file);
+
+        if (successfulFiles.length > 0) {
+          setImageFiles((prev) => [...prev, ...successfulFiles]);
+          setUploadedImages((prev) => [
+            ...prev,
+            ...successfulResults.map((item) => ({
+              url: item.url!,
+              publicId: item.publicId!,
+            })),
+          ]);
+
+          const suggestedResult =
+            successfulResults.find((item) => item.suggestedWasteTypeId) ??
+            successfulResults.find((item) => item.suggestedCategory);
+
+          if (suggestedResult) {
+            applyImageSuggestion(suggestedResult.suggestedCategory, suggestedResult.suggestedWasteTypeId);
+          }
+        }
+
+        if (result.failureCount > 0) {
+          const errorText =
+            failedResults.map((entry) => entry.fileName + ": " + entry.error).join(" | ") ||
+            ("Upload ???nh th???t b???i " + result.failureCount + "/" + files.length + " file");
+
+          if (result.successCount > 0) {
+            toast.warning("???? t???i l??n " + result.successCount + " ???nh, nh??ng c?? l???i: " + errorText);
+          } else {
+            toast.error(errorText);
+          }
+          return;
+        }
+
+        toast.success("???? t???i l??n " + result.successCount + " ???nh th??nh c??ng");
+      }
+    } catch (error) {
+      const message =
+        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        "Upload ???nh th???t b???i, vui l??ng th??? l???i";
+      toast.error(message);
+    } finally {
+      setIsUploadingImages(false);
+    }
+  };
+
+  const handleRemoveImage = (index: number) => {
+    const removedImage = uploadedImages[index];
+    setImageFiles((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
+    setUploadedImages((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
+    if (imageFiles.length <= 1) {
+      setImageSuggestion(null);
+    }
+    if (removedImage?.publicId) {
+      void imageService.deleteOne(removedImage.publicId).catch(() => {
+        toast.error("Không thể xóa ảnh đã tải lên");
+      });
+    }
+  };
+
+  const closeCreateDialog = () => {
+    if (skipImageCleanupOnCloseRef.current) {
+      skipImageCleanupOnCloseRef.current = false;
+      skipImageCleanupOnCloseRef.current = true;
+      setOpen(false);
+      resetForm();
+      return;
+    }
+    setOpen(false);
+    void cleanupUploadedImages(uploadedImages);
+    resetForm();
+  };
 
   // Fetch danh sách báo cáo của citizen hiện tại
   const { data: rawReports = [], isLoading: loadingReports } = useQuery({
@@ -239,6 +406,7 @@ const CitizenDashboard = () => {
     mutationFn: () =>
       complaintService.create({
         reportId: complaintReport!.id,
+        collectionRequestId: complaintReport?.collectionRequestId ?? null,
         type: complaintType.trim(),
         content: complaintContent.trim(),
       }),
@@ -329,14 +497,13 @@ const CitizenDashboard = () => {
     });
   };
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleCreateReport = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmittingReport || createMutation.isPending) return;
+    if (isSubmittingReport || isUploadingImages || createMutation.isPending) return;
     if (selectedWastes.length === 0) { toast.error("Vui lòng chọn ít nhất 1 loại rác"); return; }
     if (imageFiles.length === 0) { toast.error("Vui lòng có ít nhất 1 ảnh"); return; }
+    if (uploadedImages.length !== imageFiles.length) { toast.error("Ảnh đang được xử lý, vui lòng chờ một chút"); return; }
     if (!form.latitude) { toast.error("Vui lòng xác định vị trí GPS"); return; }
-
-    // Validate quantities > 0
     if (selectedWastes.some((w) => !w.quantity || w.quantity <= 0)) {
       toast.error("Số lượng phải lớn hơn 0");
       return;
@@ -344,19 +511,7 @@ const CitizenDashboard = () => {
 
     setIsSubmittingReport(true);
     try {
-      // Upload ảnh trước, lấy URLs
-      let imageUrls: string[] = [];
-      if (imageFiles.length === 1) {
-        const result = await imageService.uploadOne(imageFiles[0]);
-        imageUrls = [result.url];
-      } else {
-        const result = await imageService.uploadMultiple(imageFiles);
-        if (result.failureCount > 0) {
-          toast.error(`Upload ảnh thất bại ${result.failureCount} / ${imageFiles.length} file`);
-          return;
-        }
-        imageUrls = result.uploaded.map((u) => u.url);
-      }
+      const imageUrls = uploadedImages.map((image) => image.url);
       await createMutation.mutateAsync({
         description: form.description || undefined,
         latitude: form.latitude,
@@ -365,36 +520,30 @@ const CitizenDashboard = () => {
           wasteTypeId: waste.wasteTypeId,
           quantity: waste.quantity,
           note: waste.note || undefined,
-          // Gắn toàn bộ URL ảnh vào waste đầu tiên
           images: i === 0 ? imageUrls : undefined,
         })),
       });
-    } catch {
-      toast.error("Upload ảnh thất bại, vui lòng thử lại");
+    } catch (error) {
+      const message =
+        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        "Gửi báo cáo thất bại, vui lòng thử lại";
+      toast.error(message);
     } finally {
       setIsSubmittingReport(false);
     }
   };
 
-  const isSubmitDisabled = isSubmittingReport ||
-    createMutation.isPending ||
-    selectedWastes.length === 0 ||
-    imageFiles.length === 0 ||
-    !form.latitude ||
-    selectedWastes.some((w) => !w.quantity || w.quantity <= 0);
-
-  // Determine why the create button is disabled
-  const getCreateButtonDisabledReason = () => {
+  const createReportDisabledReason = (() => {
     if (isSubmittingReport || createMutation.isPending) return "Đang gửi báo cáo...";
+    if (isUploadingImages) return "Ảnh đang được phân tích, vui lòng chờ một chút";
     if (selectedWastes.length === 0) return "Vui lòng chọn ít nhất 1 loại rác";
     if (selectedWastes.some((w) => !w.quantity || w.quantity <= 0)) return "Vui lòng nhập số lượng > 0 cho tất cả loại rác";
     if (imageFiles.length === 0) return "Vui lòng thêm ít nhất 1 ảnh";
+    if (uploadedImages.length !== imageFiles.length) return "Ảnh chưa tải lên xong";
     if (!form.latitude) return "Vui lòng xác định vị trí GPS";
     return null;
-  };
-
-  const createButtonDisabledReason = getCreateButtonDisabledReason();
-  const isCreateButtonDisabled = !!createButtonDisabledReason;
+  })();
+  const isCreateReportDisabled = !!createReportDisabledReason;
 
   const handleCreateComplaint = (e: React.FormEvent) => {
     e.preventDefault();
@@ -491,7 +640,7 @@ const CitizenDashboard = () => {
       </div>
 
       <Tabs defaultValue="reports">
-        <TabsList>
+        <TabsList className="flex w-full justify-start overflow-x-auto whitespace-nowrap">
           <TabsTrigger value="reports">Báo cáo của tôi</TabsTrigger>
           <TabsTrigger value="complaints" className="gap-1.5">
             Khiếu nại của tôi
@@ -505,17 +654,26 @@ const CitizenDashboard = () => {
         </TabsList>
 
         <TabsContent value="reports">
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-display text-lg font-semibold text-foreground">Lịch sử báo cáo</h2>
-            <Dialog open={open} onOpenChange={setOpen}>
+            <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) closeCreateDialog(); else setOpen(true); }}>
               <DialogTrigger asChild>
                 <Button size="sm"><Plus className="mr-1 h-4 w-4" /> Tạo báo cáo mới</Button>
               </DialogTrigger>
-              <DialogContent className="max-w-md overflow-y-auto" style={{ maxHeight: "90vh" }}>
+              <DialogContent className="w-[calc(100vw-1rem)] max-w-md overflow-y-auto" style={{ maxHeight: "90vh" }}>
                 <DialogHeader>
                   <DialogTitle className="font-display">Tạo báo cáo rác mới</DialogTitle>
                 </DialogHeader>
-                <form onSubmit={handleCreate} className="space-y-4 pb-2">
+                <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+                  Ví dụ: ảnh chai nước suối có thể được gợi ý là nhóm <span className="font-medium text-foreground">Tái chế</span> và tự chọn sẵn loại rác phù hợp nếu hệ thống nhận diện được.
+                </div>
+                {imageSuggestion?.categoryLabel && (
+                  <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
+                    Gợi ý từ ảnh: nhóm rác <span className="font-semibold">{imageSuggestion.categoryLabel}</span>
+                    {imageSuggestion.wasteTypeId ? " và đã chọn sẵn một loại rác phù hợp." : "."}
+                  </div>
+                )}
+                <form onSubmit={handleCreateReport} className="space-y-4 pb-2">
 
                   {/* ── Loại rác multi-select ── */}
                   <div>
@@ -564,7 +722,7 @@ const CitizenDashboard = () => {
                                 <p className="px-2 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                                   Chọn danh mục
                                 </p>
-                                <div className="grid grid-cols-2 gap-2">
+                                <div className="grid gap-2 sm:grid-cols-2">
                                   {CATEGORY_CARDS.map((cat) => {
                                     const count = (groupedWasteTypes[cat.value] ?? []).length;
                                     return (
@@ -660,7 +818,7 @@ const CitizenDashboard = () => {
                             <div key={waste.wasteTypeId} className="flex items-start gap-3 rounded-lg border border-border p-3">
                               <div className="flex-1">
                                 <p className="text-sm font-medium text-foreground">{wt?.name ?? waste.wasteTypeId}</p>
-                                <div className="mt-2 grid grid-cols-2 gap-2">
+                                <div className="mt-2 grid gap-2 sm:grid-cols-2">
                                   <div>
                                     <Label className="text-xs">Số lượng *</Label>
                                     <Input
@@ -727,15 +885,15 @@ const CitizenDashboard = () => {
                       accept="image/*"
                       multiple
                       className="hidden"
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const files = Array.from(e.target.files || []);
-                        setImageFiles((prev) => [...prev, ...files]);
+                        await handleSelectImages(files);
                         e.target.value = "";
                       }}
                     />
                     <div
                       className="mt-1 flex min-h-24 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted p-3 transition-colors hover:border-primary"
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => { if (!isUploadingImages) fileInputRef.current?.click(); }}
                     >
                       {imageFiles.length === 0 ? (
                         <div className="text-center">
@@ -750,7 +908,7 @@ const CitizenDashboard = () => {
                               <button
                                 type="button"
                                 className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-destructive-foreground"
-                                onClick={() => setImageFiles((prev) => prev.filter((_, j) => j !== i))}
+                                onClick={() => handleRemoveImage(i)}
                               >
                                 <X className="h-2.5 w-2.5" />
                               </button>
@@ -758,7 +916,7 @@ const CitizenDashboard = () => {
                           ))}
                           <div
                             className="flex h-16 w-16 cursor-pointer items-center justify-center rounded-md border-2 border-dashed border-border bg-background hover:border-primary"
-                            onClick={() => fileInputRef.current?.click()}
+                            onClick={() => { if (!isUploadingImages) fileInputRef.current?.click(); }}
                           >
                             <Plus className="h-4 w-4 text-muted-foreground" />
                           </div>
@@ -801,7 +959,7 @@ const CitizenDashboard = () => {
                   </div>
 
                   {/* Validation hints */}
-                  {(selectedWastes.length === 0 || imageFiles.length === 0 || !form.latitude || selectedWastes.some((w) => !w.quantity || w.quantity <= 0)) && (
+                  {(selectedWastes.length === 0 || imageFiles.length === 0 || uploadedImages.length !== imageFiles.length || isUploadingImages || !form.latitude || selectedWastes.some((w) => !w.quantity || w.quantity <= 0)) && (
                     <ul className="space-y-0.5 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
                       {selectedWastes.length === 0 && <li>• Chọn ít nhất 1 loại rác</li>}
                       {selectedWastes.some((w) => !w.quantity || w.quantity <= 0) && <li>• Nhập số lượng &gt; 0 cho tất cả loại rác</li>}
@@ -817,9 +975,9 @@ const CitizenDashboard = () => {
                           <Button
                             type="submit"
                             className={`w-full border-2 border-primary/20 hover:border-primary/40 transition-colors ${
-                              isCreateButtonDisabled ? "opacity-50 cursor-not-allowed" : "shadow-sm hover:shadow-md"
+                              isCreateReportDisabled ? "opacity-50 cursor-not-allowed" : "shadow-sm hover:shadow-md"
                             }`}
-                            disabled={isCreateButtonDisabled}
+                            disabled={isCreateReportDisabled}
                           >
                             {createMutation.isPending ? (
                               <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Đang gửi...</>
@@ -827,9 +985,9 @@ const CitizenDashboard = () => {
                           </Button>
                         </div>
                       </TooltipTrigger>
-                      {createButtonDisabledReason && (
+                      {createReportDisabledReason && (
                         <TooltipContent>
-                          <p>{createButtonDisabledReason}</p>
+                          <p>{createReportDisabledReason}</p>
                         </TooltipContent>
                       )}
                     </Tooltip>
@@ -852,7 +1010,8 @@ const CitizenDashboard = () => {
           ) : (
             <div className="space-y-3">
               {reports.map((r) => {
-                const st = statusMap[r.status] || { label: r.status, variant: "secondary" as const };
+                const normalizedStatus = (r.status || "").toUpperCase();
+                const st = statusMap[normalizedStatus] || { label: r.status, variant: "secondary" as const };
                 // Fix Invalid Date
                 const dateStr = r.createdTime ? (() => {
                   const d = new Date(r.createdTime);
@@ -887,7 +1046,7 @@ const CitizenDashboard = () => {
                           {dateStr && <p className="text-xs text-muted-foreground">{dateStr}</p>}
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
+                      <div className="flex flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
                         {r.points != null && r.points > 0 && (
                           <span className="flex items-center gap-1 text-sm font-medium text-primary">
                             <Star className="h-4 w-4" /> +{r.points}
@@ -916,7 +1075,7 @@ const CitizenDashboard = () => {
         </TabsContent>
 
         <TabsContent value="complaints">
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="font-display text-lg font-semibold text-foreground">Khiếu nại của tôi</h2>
               <p className="text-sm text-muted-foreground">Theo dõi trạng thái xử lý complaint theo từng báo cáo.</p>
@@ -971,7 +1130,7 @@ const CitizenDashboard = () => {
                     const isCurrentUser = item.citizenId === user?.id;
 
                     return (
-                      <div key={`${item.citizenId || rank}-${index}`} className={`flex items-center justify-between rounded-lg p-3 ${isCurrentUser ? "bg-eco-light" : "bg-muted/50"}`}>
+                      <div key={`${item.citizenId || rank}-${index}`} className={`flex flex-col gap-2 rounded-lg p-3 sm:flex-row sm:items-center sm:justify-between ${isCurrentUser ? "bg-eco-light" : "bg-muted/50"}`}>
                         <div className="flex items-center gap-3">
                           <div className={`flex h-8 w-8 items-center justify-center rounded-full font-display text-sm font-bold ${rank <= 3 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
                             {rank}
@@ -1017,7 +1176,7 @@ const CitizenDashboard = () => {
       />
 
       <Dialog open={complaintDialogOpen} onOpenChange={(open) => { if (!open) closeComplaintDialog(); }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-md">
           <DialogHeader>
             <DialogTitle className="font-display">Tạo khiếu nại</DialogTitle>
           </DialogHeader>
@@ -1068,7 +1227,7 @@ const CitizenDashboard = () => {
       </Dialog>
 
       <Dialog open={!!selectedComplaint} onOpenChange={(open) => { if (!open) setSelectedComplaint(null); }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-lg">
           <DialogHeader>
             <DialogTitle className="font-display">Chi tiết khiếu nại</DialogTitle>
           </DialogHeader>
@@ -1131,3 +1290,6 @@ const CitizenDashboard = () => {
 };
 
 export default CitizenDashboard;
+
+
+

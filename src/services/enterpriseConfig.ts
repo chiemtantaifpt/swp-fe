@@ -1,4 +1,13 @@
 import api from "./api";
+import { enterpriseProfileApi } from "./enterprise-profile.api";
+import type {
+  EnterpriseDocument,
+  EnterpriseProfile as RecyclingEnterprise,
+  SetEnvironmentLicensePayload,
+  SubmitEnterpriseProfilePayload,
+  SubmitEnterpriseProfileResult,
+  UpsertEnterpriseProfilePayload,
+} from "./profile.types";
 
 // ─────────────────────────────────────────────
 // Generic API wrapper
@@ -6,45 +15,13 @@ import api from "./api";
 interface ApiResponse<T> {
   data: T;
   message: string;
-  statusCode: number;
+  statusCode: number | string;
   code?: string;
 }
 
 // ─────────────────────────────────────────────
 // RecyclingEnterprise
 // ─────────────────────────────────────────────
-export interface RecyclingEnterprise {
-  id: string;
-  userId: string;
-  name: string;
-  taxCode: string;
-  address: string;
-  legalRepresentative: string;
-  representativePosition: string;
-  environmentLicenseFileId: string | null;
-  approvalStatus: string;
-  operationalStatus: string;
-  submittedAt: string | null;
-  reviewedAt: string | null;
-  reviewedByUserId: string | null;
-  rejectionReason: string | null;
-  createdTime: string;
-  documents?: EnterpriseDocument[];
-}
-
-export interface EnterpriseDocument {
-  id: string;
-  recyclingEnterpriseId: string;
-  documentType: string;
-  originalFileName: string;
-  storedFileName: string;
-  fileUrl: string;
-  contentType: string;
-  fileSize: number;
-  uploadedAt: string;
-  isDeleted: boolean;
-}
-
 export interface RecyclingEnterpriseListParams {
   PageNumber?: number;
   PageSize?: number;
@@ -61,22 +38,16 @@ export const recyclingEnterpriseService = {
     return res.data;
   },
 
-  getProfile: async (): Promise<RecyclingEnterprise | null> => {
-    const res = await api.get<ApiResponse<RecyclingEnterprise | null>>("/recycling-enterprises/me/profile");
-    return res.data.data;
-  },
+  getProfile: (): Promise<RecyclingEnterprise | null> => enterpriseProfileApi.getMe(),
 
-  updateProfile: async (body: {
-    name: string;
-    taxCode: string;
-    address: string;
-    legalRepresentative: string;
-    representativePosition: string;
-    environmentLicenseFileId: string;
-  }): Promise<RecyclingEnterprise> => {
-    const res = await api.post<ApiResponse<RecyclingEnterprise>>("/recycling-enterprises/me/profile", body);
-    return res.data.data;
-  },
+  updateProfile: (body: UpsertEnterpriseProfilePayload): Promise<RecyclingEnterprise> =>
+    enterpriseProfileApi.upsertMe(body),
+
+  setEnvironmentLicense: (body: SetEnvironmentLicensePayload): Promise<RecyclingEnterprise> =>
+    enterpriseProfileApi.setEnvironmentLicense(body),
+
+  submitProfile: (body: SubmitEnterpriseProfilePayload): Promise<SubmitEnterpriseProfileResult> =>
+    enterpriseProfileApi.submit(body),
 };
 
 // ─────────────────────────────────────────────
@@ -266,20 +237,8 @@ export const wasteCapabilityService = {
 // EnterpriseDocuments
 // ─────────────────────────────────────────────
 export const enterpriseDocumentsService = {
-  getAll: async (): Promise<EnterpriseDocument[]> => {
-    const res = await api.get<EnterpriseDocument[]>("/recycling-enterprises/me/documents");
-    return res.data;
-  },
+  getAll: (): Promise<EnterpriseDocument[]> => enterpriseProfileApi.getDocuments(),
 
-  upload: async (documentType: number, file: File): Promise<EnterpriseDocument> => {
-    const formData = new FormData();
-    formData.append("DocumentType", documentType.toString());
-    formData.append("File", file);
-    const res = await api.post<ApiResponse<EnterpriseDocument>>("/recycling-enterprises/me/documents", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
-    return res.data.data;
-  },
+  upload: (documentType: number | string, file: File): Promise<EnterpriseDocument> =>
+    enterpriseProfileApi.uploadDocument(documentType, file),
 };

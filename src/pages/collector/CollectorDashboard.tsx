@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +35,8 @@ const getStep = (a: CollectorAssignment): Step => {
   return "ASSIGNED";
 };
 
-const shortId = (uuid: string) => uuid.slice(0, 8).toUpperCase();
+const getAssignmentDisplayName = (assignment: CollectorAssignment) =>
+  assignment.wasteTypeName?.trim() || "Yêu cầu thu gom";
 
 const CollectorDashboard = () => {
   const [online, setOnline]                             = useState(true);
@@ -43,9 +44,22 @@ const CollectorDashboard = () => {
   const [completingAssignment, setCompletingAssignment] = useState<CollectorAssignment | null>(null);
   const [proofNote, setProofNote]                       = useState("");
   const [proofFile, setProofFile]                       = useState<File | null>(null);
+  const [proofPreviewUrl, setProofPreviewUrl]           = useState<string | null>(null);
   const [proofSubmitting, setProofSubmitting]           = useState(false);
   const fileInputRef                                    = useRef<HTMLInputElement>(null);
   const qc                                              = useQueryClient();
+
+  useEffect(() => {
+    if (!proofFile) {
+      setProofPreviewUrl(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(proofFile);
+    setProofPreviewUrl(objectUrl);
+
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [proofFile]);
 
   const { data: assignmentData, isLoading } = useQuery({
     queryKey: ["myAssignments"],
@@ -147,7 +161,7 @@ const CollectorDashboard = () => {
       </div>
 
       <Tabs defaultValue="active">
-        <TabsList>
+        <TabsList className="flex w-full justify-start overflow-x-auto whitespace-nowrap">
           <TabsTrigger value="active">Việc cần làm ({isLoading ? "…" : activeTasks.length})</TabsTrigger>
           <TabsTrigger value="history">Lịch sử ({isLoading ? "…" : historyTasks.length})</TabsTrigger>
         </TabsList>
@@ -192,8 +206,8 @@ const CollectorDashboard = () => {
                             <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
                               {String(i + 1).padStart(2, "00")}
                             </span>
-                            <span className="font-mono text-sm font-semibold text-foreground">
-                              {shortId(a.requestId)}
+                            <span className="text-sm font-semibold text-foreground">
+                              {getAssignmentDisplayName(a)}
                             </span>
                             <Badge variant={STEP_BADGE_VARIANT[step]}>{STEP_LABEL[step]}</Badge>
                             {a.wasteTypeName && (
@@ -272,10 +286,10 @@ const CollectorDashboard = () => {
               ) : (
                 <div className="space-y-3">
                   {historyTasks.map(a => (
-                    <div key={a.id} className="flex items-center justify-between rounded-lg bg-muted/50 p-3">
-                      <div className="flex-1">
+                    <div key={a.id} className="flex flex-col gap-3 rounded-lg bg-muted/50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-mono text-sm font-medium text-foreground">{shortId(a.requestId)}</p>
+                          <p className="text-sm font-medium text-foreground">{getAssignmentDisplayName(a)}</p>
                           {a.wasteTypeName && (
                             <Badge variant="secondary" className="text-xs">{a.wasteTypeName}</Badge>
                           )}
@@ -308,10 +322,10 @@ const CollectorDashboard = () => {
         open={!!completingAssignment}
         onOpenChange={(o) => { if (!o && !proofSubmitting) { setCompletingAssignment(null); setProofFile(null); setProofNote(""); } }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              Hoàn tất thu gom — {completingAssignment && shortId(completingAssignment.requestId)}
+              Hoàn tất thu gom — {completingAssignment && getAssignmentDisplayName(completingAssignment)}
             </DialogTitle>
           </DialogHeader>
 
@@ -329,7 +343,7 @@ const CollectorDashboard = () => {
               {proofFile ? (
                 <div className="flex items-center gap-3 rounded-lg border p-2">
                   <img
-                    src={URL.createObjectURL(proofFile)}
+                    src={proofPreviewUrl ?? ""}
                     alt="preview"
                     className="h-16 w-16 rounded-md border object-cover"
                   />
@@ -367,7 +381,7 @@ const CollectorDashboard = () => {
             </div>
           </div>
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row">
             <Button
               variant="outline"
               disabled={proofSubmitting}

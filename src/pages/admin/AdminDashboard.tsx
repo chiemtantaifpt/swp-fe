@@ -21,25 +21,18 @@ import { wasteTypeService, WasteType, WASTE_CATEGORIES } from "@/services/wasteT
 import { complaintService } from "@/services/complaint";
 import { disputeResolutionService } from "@/services/disputeResolution";
 import { pointRuleService, PointRule } from "@/services/pointRule";
+import { adminUserManagementService } from "@/services/adminUserManagement";
 import {
   createDistrictThenWard,
   districtService,
   wardService,
 } from "@/services/enterpriseConfig";
 
-const mockUsers = [
-  { id: "1", name: "Nguyễn Văn An", email: "citizen@test.com", role: "citizen", status: "active", reports: 12 },
-  { id: "2", name: "Công ty Tái chế Xanh", email: "enterprise@test.com", role: "enterprise", status: "active", reports: 0 },
-  { id: "3", name: "Trần Minh Tuấn", email: "collector@test.com", role: "collector", status: "active", reports: 0 },
-  { id: "5", name: "Lê Văn C", email: "levanc@email.com", role: "citizen", status: "active", reports: 8 },
-  { id: "6", name: "Phạm Thị D", email: "phamthid@email.com", role: "citizen", status: "suspended", reports: 3 },
-];
-
 const roleLabels: Record<string, string> = {
-  citizen: "Công dân",
-  enterprise: "Doanh nghiệp",
-  collector: "Thu gom",
-  admin: "Quản trị",
+  Citizen: "Công dân",
+  Enterprise: "Doanh nghiệp",
+  Collector: "Thu gom",
+  Admin: "Quản trị",
 };
 
 const complaintStatusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -47,6 +40,12 @@ const complaintStatusMap: Record<string, { label: string; variant: "default" | "
   InReview: { label: "Đang xem xét", variant: "outline" },
   Resolved: { label: "Đã giải quyết", variant: "default" },
   Rejected: { label: "Từ chối", variant: "destructive" },
+};
+
+const enterpriseApprovalStatusLabels: Record<string, string> = {
+  PendingApproval: "Chờ duyệt",
+  Approved: "Đã duyệt",
+  Rejected: "Từ chối",
 };
 
 // ─── WasteType Form Dialog ────────────────────────────────────────────────────
@@ -205,11 +204,11 @@ const PointRuleFormDialog = ({
         basePoint: Number(basePoint),
       }),
     onSuccess: () => {
-      toast.success("Đã tạo point rule thành công");
+      toast.success("Đã tạo quy tắc điểm thành công");
       qc.invalidateQueries({ queryKey: ["pointRules"] });
       onClose();
     },
-    onError: () => toast.error("Tạo point rule thất bại"),
+    onError: () => toast.error("Tạo quy tắc điểm thất bại"),
   });
 
   const updateMutation = useMutation({
@@ -219,11 +218,11 @@ const PointRuleFormDialog = ({
         isActive,
       }),
     onSuccess: () => {
-      toast.success("Đã cập nhật point rule thành công");
+      toast.success("Đã cập nhật quy tắc điểm thành công");
       qc.invalidateQueries({ queryKey: ["pointRules"] });
       onClose();
     },
-    onError: () => toast.error("Cập nhật point rule thất bại"),
+    onError: () => toast.error("Cập nhật quy tắc điểm thất bại"),
   });
 
   const isPending = createMutation.isPending || updateMutation.isPending;
@@ -251,7 +250,7 @@ const PointRuleFormDialog = ({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="font-display">
-            {isEdit ? "Cập nhật point rule" : "Thêm point rule"}
+            {isEdit ? "Cập nhật quy tắc điểm" : "Thêm quy tắc điểm"}
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
@@ -302,7 +301,7 @@ const PointRuleFormDialog = ({
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Hủy</Button>
             <Button type="submit" disabled={isPending}>
-              {isPending ? "Đang lưu..." : isEdit ? "Lưu thay đổi" : "Thêm rule"}
+              {isPending ? "Đang lưu..." : isEdit ? "Lưu thay đổi" : "Thêm quy tắc"}
             </Button>
           </DialogFooter>
         </form>
@@ -396,7 +395,8 @@ const AdminDashboard = () => {
   const updateComplaintStatusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => complaintService.updateStatus(id, status),
     onSuccess: (_, variables) => {
-      toast.success(`Đã cập nhật khiếu nại sang trạng thái ${variables.status}`);
+      const statusLabel = complaintStatusMap[variables.status]?.label ?? variables.status;
+      toast.success(`Đã cập nhật khiếu nại sang trạng thái ${statusLabel}`);
       qc.invalidateQueries({ queryKey: ["adminComplaints"] });
       qc.invalidateQueries({ queryKey: ["adminComplaintDetail", variables.id] });
       if (variables.status === "InReview") {
@@ -520,6 +520,26 @@ const AdminDashboard = () => {
   const { data: pointRules = [], isLoading: pointRuleLoading, isError: pointRuleError } = useQuery({
     queryKey: ["pointRules"],
     queryFn: () => pointRuleService.getAll(),
+  });
+  const { data: adminUsersData, isLoading: adminUsersLoading, isError: adminUsersError } = useQuery({
+    queryKey: ["adminUsers"],
+    queryFn: () => adminUserManagementService.getUsers({ PageNumber: 1, PageSize: 50 }),
+  });
+  const adminUsers = adminUsersData?.items ?? [];
+  const totalAdminUsers = adminUsersData?.totalCount ?? 0;
+  const updateAdminUserStatusMutation = useMutation({
+    mutationFn: ({ userId, isActive }: { userId: string; isActive: boolean }) =>
+      adminUserManagementService.updateUserStatus(userId, { isActive }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["adminUsers"] });
+      toast.success(variables.isActive ? "Đã mở khóa tài khoản" : "Đã khóa tài khoản");
+    },
+    onError: (error: unknown) => {
+      const message =
+        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        "Cập nhật trạng thái tài khoản thất bại";
+      toast.error(message);
+    },
   });
   const pointRuleWasteTypeIds = pointRules.map((rule) => rule.wasteTypeId);
   const pointRuleItems = wasteTypes.map((wt) => {
@@ -662,7 +682,7 @@ const AdminDashboard = () => {
       {/* Stats */}
       <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          { icon: Users, label: "Người dùng", value: "1,234", color: "bg-eco-light" },
+          { icon: Users, label: "Người dùng", value: adminUsersLoading ? "..." : String(totalAdminUsers), color: "bg-eco-light" },
           { icon: Package, label: "Đơn trong tháng", value: "856", color: "bg-eco-medium" },
           { icon: CheckCircle, label: "Tỷ lệ hoàn thành", value: "87%", color: "bg-eco-teal" },
           { icon: AlertTriangle, label: "Khiếu nại chờ", value: complaintLoading ? "..." : String(openComplaintCount), color: "bg-eco-light" },
@@ -682,10 +702,10 @@ const AdminDashboard = () => {
       </div>
 
       <Tabs defaultValue="users">
-        <TabsList>
+        <TabsList className="flex w-full justify-start overflow-x-auto whitespace-nowrap">
           <TabsTrigger value="users">Quản lý người dùng</TabsTrigger>
           <TabsTrigger value="wastetype">Loại rác</TabsTrigger>
-          <TabsTrigger value="point-rule">Point rule</TabsTrigger>
+          <TabsTrigger value="point-rule">Quy tắc điểm</TabsTrigger>
           <TabsTrigger value="complaints">Khiếu nại</TabsTrigger>
           <TabsTrigger value="overview">Tổng quan</TabsTrigger>
         </TabsList>
@@ -712,10 +732,10 @@ const AdminDashboard = () => {
                           <p className="text-sm font-medium">{item.name}</p>
                           <p className="text-xs text-muted-foreground">MST: {item.taxCode} · {item.address}</p>
                           <Badge variant={item.approvalStatus === "PendingApproval" ? "outline" : "secondary"}>
-                            {item.approvalStatus}
+                            {enterpriseApprovalStatusLabels[item.approvalStatus] ?? item.approvalStatus}
                           </Badge>
                         </div>
-                        <div className="flex gap-2 items-center">
+                        <div className="flex flex-wrap items-center gap-2">
                           <Button size="sm" variant="outline" onClick={() => openEnterpriseDetail(item.id)}>
                             Chi tiết
                           </Button>
@@ -741,7 +761,7 @@ const AdminDashboard = () => {
           </Card>
 
           <Dialog open={detailOpen} onOpenChange={(open) => { if (!open) closeEnterpriseDetail(); }}>
-            <DialogContent className="max-w-4xl w-[90vw] md:w-[80vw] lg:w-[70vw]">
+            <DialogContent className="w-[calc(100vw-1rem)] max-w-4xl md:w-[80vw] lg:w-[70vw]">
               <DialogHeader className="pb-2 border-b border-border">
                 <DialogTitle className="font-display">Chi tiết doanh nghiệp</DialogTitle>
               </DialogHeader>
@@ -768,7 +788,9 @@ const AdminDashboard = () => {
                       <div className="space-y-2 text-sm text-foreground">
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground">Trạng thái phê duyệt:</span>
-                          <Badge variant={selectedEnterprise.approvalStatus === "PendingApproval" ? "outline" : "secondary"}>{selectedEnterprise.approvalStatus}</Badge>
+                          <Badge variant={selectedEnterprise.approvalStatus === "PendingApproval" ? "outline" : "secondary"}>
+                            {enterpriseApprovalStatusLabels[selectedEnterprise.approvalStatus] ?? selectedEnterprise.approvalStatus}
+                          </Badge>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground">Trạng thái hoạt động:</span>
@@ -831,7 +853,7 @@ const AdminDashboard = () => {
           </Dialog>
 
           <Dialog open={rejectDialogOpen} onOpenChange={(open) => { if (!open) closeRejectDialog(); }}>
-            <DialogContent className="max-w-md">
+            <DialogContent className="w-[calc(100vw-1rem)] max-w-md">
               <DialogHeader>
                 <DialogTitle>Yêu cầu từ chối doanh nghiệp</DialogTitle>
                 <p className="text-sm text-muted-foreground">Nhập lý do từ chối và xác nhận.</p>
@@ -859,36 +881,60 @@ const AdminDashboard = () => {
               <CardTitle className="font-display text-base">Danh sách người dùng</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {mockUsers.map(u => (
-                  <div key={u.id} className="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-foreground">{u.name}</span>
-                        <Badge variant="outline">{roleLabels[u.role]}</Badge>
-                        <Badge variant={u.status === "active" ? "default" : "destructive"}>
-                          {u.status === "active" ? "Hoạt động" : "Tạm khóa"}
-                        </Badge>
+              {adminUsersLoading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <div key={index} className="rounded-lg border border-border p-3">
+                      <div className="space-y-2">
+                        <div className="h-4 w-48 animate-pulse rounded bg-muted" />
+                        <div className="h-3 w-56 animate-pulse rounded bg-muted" />
                       </div>
-                      <p className="text-xs text-muted-foreground">{u.email}</p>
                     </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => toast.info(`Xem chi tiết ${u.name}`)}>
-                        <Eye className="mr-1 h-3 w-3" /> Chi tiết
-                      </Button>
-                      {u.status === "active" ? (
-                        <Button size="sm" variant="outline" onClick={() => toast.warning(`Đã khóa tài khoản ${u.name}`)}>
-                          <Ban className="mr-1 h-3 w-3" /> Khóa
-                        </Button>
-                      ) : (
-                        <Button size="sm" variant="outline" onClick={() => toast.success(`Đã mở khóa ${u.name}`)}>
-                          <CheckCircle className="mr-1 h-3 w-3" /> Mở khóa
-                        </Button>
-                      )}
+                  ))}
+                </div>
+              ) : adminUsersError ? (
+                <p className="text-sm text-destructive">Không thể tải danh sách người dùng</p>
+              ) : adminUsers.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Chưa có người dùng nào.</p>
+              ) : (
+                <div className="space-y-3">
+                  {adminUsers.map((u) => (
+                    <div key={u.id} className="flex flex-col gap-3 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-foreground">{u.fullName || u.email}</span>
+                          <Badge variant="outline">{roleLabels[u.role] ?? u.role}</Badge>
+                          <Badge variant={u.isActive ? "default" : "destructive"}>
+                            {u.isActive ? "Hoạt động" : "Tạm khóa"}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{u.email}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {u.isActive ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={updateAdminUserStatusMutation.isPending}
+                            onClick={() => updateAdminUserStatusMutation.mutate({ userId: u.id, isActive: false })}
+                          >
+                            <Ban className="mr-1 h-3 w-3" /> Khóa
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={updateAdminUserStatusMutation.isPending}
+                            onClick={() => updateAdminUserStatusMutation.mutate({ userId: u.id, isActive: true })}
+                          >
+                            <CheckCircle className="mr-1 h-3 w-3" /> Mở khóa
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -977,21 +1023,21 @@ const AdminDashboard = () => {
             <CardHeader>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <CardTitle className="font-display text-base">Cấu hình point rule</CardTitle>
+                  <CardTitle className="font-display text-base">Cấu hình quy tắc điểm</CardTitle>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Thiết lập điểm cơ bản cho từng loại rác. Backend sẽ dùng rule này khi cộng điểm cho công dân.
+                    Thiết lập điểm cơ bản cho từng loại rác để hệ thống cộng điểm cho công dân.
                   </p>
                 </div>
                 <Button size="sm" onClick={handleAddPointRule}>
-                  <Plus className="mr-1 h-4 w-4" /> Thêm point rule
+                  <Plus className="mr-1 h-4 w-4" /> Thêm quy tắc điểm
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
               {wtLoading || pointRuleLoading ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">Đang tải point rule...</p>
+                <p className="py-8 text-center text-sm text-muted-foreground">Đang tải quy tắc điểm...</p>
               ) : pointRuleError ? (
-                <p className="py-8 text-center text-sm text-destructive">Không thể tải point rule</p>
+                <p className="py-8 text-center text-sm text-destructive">Không thể tải quy tắc điểm</p>
               ) : pointRuleItems.length === 0 ? (
                 <p className="py-8 text-center text-sm text-muted-foreground">Chưa có loại rác để cấu hình điểm</p>
               ) : (
@@ -1006,7 +1052,7 @@ const AdminDashboard = () => {
                           <span className="text-sm font-medium text-foreground">{wasteType.name}</span>
                           <Badge variant="outline">{WASTE_CATEGORIES[wasteType.category ?? 3] ?? "Khác"}</Badge>
                           <Badge variant={rule ? (rule.isActive === false ? "secondary" : "default") : "outline"}>
-                            {rule ? (rule.isActive === false ? "Ngừng áp dụng" : "Đang áp dụng") : "Chưa có rule"}
+                            {rule ? (rule.isActive === false ? "Ngừng áp dụng" : "Đang áp dụng") : "Chưa có quy tắc"}
                           </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground">
@@ -1023,7 +1069,7 @@ const AdminDashboard = () => {
                           </Button>
                         ) : (
                           <Button size="sm" onClick={() => handleAddPointRuleForWasteType(wasteType.id)}>
-                            <Plus className="mr-1 h-3 w-3" /> Tạo rule
+                            <Plus className="mr-1 h-3 w-3" /> Tạo quy tắc
                           </Button>
                         )}
                       </div>
@@ -1054,9 +1100,6 @@ const AdminDashboard = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Luồng đúng: Mở {"->"} Đang xem xét {"->"} quản trị viên ghi kết quả xử lý hoặc từ chối. Khi xác nhận xử lý, hệ thống sẽ tự chuyển sang trạng thái đã giải quyết.
-              </p>
             </CardHeader>
             <CardContent>
               {complaintLoading ? (
@@ -1279,7 +1322,7 @@ const AdminDashboard = () => {
               )}
 
               <div className="rounded-lg border border-border p-4">
-                <div className="mb-2 flex items-center justify-between">
+                <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-sm font-medium text-foreground">Lịch sử xử lý</p>
                   <span className="text-xs text-muted-foreground">{complaintResolutionHistory.length} mục</span>
                 </div>
@@ -1362,7 +1405,7 @@ const AdminDashboard = () => {
       />
 
       <Dialog open={districtDialogOpen} onOpenChange={(open) => { if (!open) setDistrictDialogOpen(false); }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-md">
           <DialogHeader>
             <DialogTitle className="font-display">Thêm quận/huyện</DialogTitle>
           </DialogHeader>
@@ -1393,7 +1436,7 @@ const AdminDashboard = () => {
       </Dialog>
 
       <Dialog open={wardDialogOpen} onOpenChange={(open) => { if (!open) setWardDialogOpen(false); }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-md">
           <DialogHeader>
             <DialogTitle className="font-display">Thêm phường/xã</DialogTitle>
           </DialogHeader>
@@ -1433,7 +1476,7 @@ const AdminDashboard = () => {
       </Dialog>
 
       <Dialog open={quickLocationDialogOpen} onOpenChange={(open) => { if (!open) setQuickLocationDialogOpen(false); }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-lg">
           <DialogHeader>
             <DialogTitle className="font-display">Tạo nhanh quận/huyện và phường/xã</DialogTitle>
           </DialogHeader>

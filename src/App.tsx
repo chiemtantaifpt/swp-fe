@@ -12,6 +12,7 @@ import CitizenDashboard from "./pages/citizen/CitizenDashboard";
 import EnterpriseDashboard from "./pages/enterprise/EnterpriseDashboard";
 import CollectorDashboard from "./pages/collector/CollectorDashboard";
 import AdminDashboard from "./pages/admin/AdminDashboard";
+import ProfilePage from "./pages/profile/ProfilePage";
 import NotFound from "./pages/NotFound";
 
 const App = () => (
@@ -29,6 +30,7 @@ const App = () => (
             <Route path="/enterprise" element={<ProtectedRoute allowedRoles={["Enterprise"]}><EnterpriseDashboard /></ProtectedRoute>} />
             <Route path="/collector" element={<ProtectedRoute allowedRoles={["Collector"]}><CollectorDashboard /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute allowedRoles={["Admin"]}><AdminDashboard /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute allowedRoles={["Citizen", "Enterprise", "Collector", "Admin"]}><ProfilePage /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

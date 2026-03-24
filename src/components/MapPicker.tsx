@@ -139,7 +139,7 @@ export default function MapPicker({ open, onClose, onConfirm, initialLat, initia
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl p-0 overflow-hidden">
+      <DialogContent className="w-[calc(100vw-1rem)] max-w-2xl overflow-hidden p-0">
         <DialogHeader className="px-4 pt-4 pb-2">
           <DialogTitle className="font-display flex items-center gap-2">
             <MapPin className="h-4 w-4 text-primary" />

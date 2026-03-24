@@ -197,7 +197,7 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
     });
   };
 
-  const needsProof = normalizedStatus === "ASSIGNED" || normalizedStatus === "COMPLETED";
+  const needsProof = normalizedStatus === "ASSIGNED" || normalizedStatus === "COMPLETED" || normalizedStatus === "VERIFIED";
   const { data: proof, isLoading: proofLoading } = useQuery({
     queryKey: ["reportProof", report.id],
     queryFn: () => wasteReportService.getProof(report.id),
@@ -208,6 +208,7 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
   // Xác định bước hiện tại trong 5-step timeline
   const currentStepKey = (() => {
     if (normalizedStatus === "COMPLETED") return "COMPLETED";
+    if (normalizedStatus === "VERIFIED") return "COMPLETED";
     if (normalizedStatus === "ASSIGNED" && proof) return "COLLECTED";
     return normalizedStatus; // PENDING | PROCESSING | ASSIGNED
   })();
@@ -293,7 +294,7 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
   return (
     <>
       <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[calc(100vw-1rem)] max-h-[90vh] max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display flex items-center gap-2">
             <FileText className="h-4 w-4 text-primary" />
@@ -371,15 +372,6 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
 
         {/* Thông tin chi tiết */}
         <div className="space-y-3 text-sm">
-          {/* ID báo cáo */}
-          <div className="flex items-start gap-2">
-            <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-            <div>
-              <p className="text-xs text-muted-foreground">ID báo cáo</p>
-              <p className="font-mono text-xs">{report.id}</p>
-            </div>
-          </div>
-
           {/* Người tạo */}
           {report.citizenName && (
             <div className="flex items-start gap-2">
@@ -576,7 +568,7 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
 
     {/* Dialog sửa báo cáo (edit) */}
     <Dialog open={isEditOpen} onOpenChange={(open) => setIsEditOpen(open)}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[calc(100vw-1rem)] max-h-[90vh] max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Chỉnh sửa báo cáo</DialogTitle>
         </DialogHeader>
@@ -624,7 +616,7 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
                         <p className="px-2 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                           Chọn danh mục
                         </p>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid gap-2 sm:grid-cols-2">
                           {[
                             { value: 0, label: "Hữu cơ" },
                             { value: 1, label: "Tái chế" },
@@ -719,7 +711,7 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
                     <div key={waste.wasteTypeId} className="flex items-start gap-3 rounded-lg border border-border p-3">
                       <div className="flex-1">
                         <p className="text-sm font-medium text-foreground">{wt?.name ?? waste.wasteTypeId}</p>
-                        <div className="mt-2 grid grid-cols-2 gap-2">
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
                           <div>
                             <Label className="text-xs">Số lượng *</Label>
                             <Input
@@ -911,3 +903,4 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
   </>
   );
 }
+
