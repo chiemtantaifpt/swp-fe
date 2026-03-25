@@ -31,6 +31,8 @@ export const useCitizenPoint = (citizenId?: string) => {
     queryKey: citizenId ? citizenPointQueryKeys.summary(citizenId) : [...citizenPointQueryKeys.all, "summary", "anonymous"],
     queryFn: () => citizenPointService.getByCitizenId(citizenId!),
     enabled: !!citizenId,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -54,6 +56,8 @@ export const useCitizenPointMyRank = (period: CitizenPointPeriod = "AllTime") =>
   return useQuery({
     queryKey: citizenPointQueryKeys.myRank(period),
     queryFn: () => citizenPointService.getMyRank(period),
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -114,4 +118,3 @@ export const useCitizenPointDashboard = ({
     [historyQuery, leaderboardQuery, myRankQuery, results, summaryQuery]
   );
 };
-

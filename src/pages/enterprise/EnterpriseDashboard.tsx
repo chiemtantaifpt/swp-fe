@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -23,6 +24,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { serviceAreaService, wasteCapabilityService, recyclingEnterpriseService, districtService, wardService } from "@/services/enterpriseConfig";
 import { wasteTypeService } from "@/services/wasteType";
 import { collectionRequestService, collectorAssignmentService, CollectionRequest, collectorService, Collector, collectorProofService, CollectorProof } from "@/services/collectionRequest";
+import type { Complaint, ComplaintStatus } from "@/services/complaint";
+import { useCreateDisputeResolution, useDisputeResolutionsByComplaint, useEnterpriseComplaintDetail, useEnterpriseComplaints } from "@/hooks/useEnterpriseComplaints";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -55,6 +58,19 @@ const PROOF_STATUS_BADGE: Record<string, React.ReactNode> = {
   Rejected: <Badge variant="destructive" className="text-xs">Từ chối</Badge>,
 };
 
+const COMPLAINT_STATUS_META: Record<ComplaintStatus, { label: string; badgeClass?: string; variant?: "default" | "secondary" | "destructive" | "outline" }> = {
+  Open: { label: "Mở", variant: "secondary" },
+  InReview: { label: "Đang xem xét", variant: "outline", badgeClass: "border-amber-300 text-amber-700" },
+  EnterpriseResponded: { label: "Đã phản hồi", badgeClass: "bg-blue-600 text-white hover:bg-blue-700" },
+  Resolved: { label: "Đã giải quyết", badgeClass: "bg-green-600 text-white hover:bg-green-700" },
+  Rejected: { label: "Từ chối", variant: "destructive" },
+};
+
+const COMPLAINT_TYPE_LABEL: Record<string, string> = {
+  Complaint: "Khiếu nại",
+  Feedback: "Góp ý",
+};
+
 const ProofCard = ({
   p,
   onView,
@@ -81,7 +97,6 @@ const ProofCard = ({
         )}
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-xs text-muted-foreground">{p.assignmentId.slice(0, 8)}…</span>
             {p.wasteTypeName && <Badge variant="secondary" className="text-xs">{p.wasteTypeName}</Badge>}
             {PROOF_STATUS_BADGE[p.reviewStatus]}
           </div>
@@ -122,7 +137,6 @@ const RequestCard = ({
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-xs text-muted-foreground">{r.id.slice(0, 8)}…</span>
             {r.wasteTypeName && <Badge variant="secondary" className="text-xs">{r.wasteTypeName}</Badge>}
             {STATUS_BADGE[r.status]}
             {r.priorityScore > 0 && <Badge variant="outline" className="text-xs">Ưu tiên: {r.priorityScore}</Badge>}
@@ -155,6 +169,7 @@ const EnterpriseDashboard = () => {
     enabled: !!user?.id,
     retry: false,
   });
+  const isApproved = myProfile?.approvalStatus === "Approved";
 
   // ── resolve enterpriseId from profile (already fetched above) ──
   const enterpriseId = myProfile?.id ?? "";
@@ -171,23 +186,30 @@ const EnterpriseDashboard = () => {
   const [proofReviewTab, setProofReviewTab] = useState<"Pending" | "Approved" | "Rejected">("Pending");
   const [selectedProof, setSelectedProof] = useState<CollectorProof | null>(null);
   const [reviewNote, setReviewNote] = useState("");
+  const [complaintStatusFilter, setComplaintStatusFilter] = useState<"all" | ComplaintStatus>("all");
+  const [selectedComplaintId, setSelectedComplaintId] = useState<string | null>(null);
+  const [disputeResponseNote, setDisputeResponseNote] = useState("");
 
   // ── collection request queries ──
   const { data: offeredData, isLoading: offeredLoading } = useQuery({
     queryKey: ["collectionRequests", "Offered"],
     queryFn: () => collectionRequestService.getAll({ Status: "Offered", PageSize: 50 }),
+    enabled: isApproved,
   });
   const { data: acceptedData, isLoading: acceptedLoading } = useQuery({
     queryKey: ["collectionRequests", "Accepted"],
     queryFn: () => collectionRequestService.getAll({ Status: "Accepted", PageSize: 50 }),
+    enabled: isApproved,
   });
   const { data: assignedData, isLoading: assignedLoading } = useQuery({
     queryKey: ["collectionRequests", "Assigned"],
     queryFn: () => collectionRequestService.getAll({ Status: "Assigned", PageSize: 50 }),
+    enabled: isApproved,
   });
   const { data: completedData, isLoading: completedLoading } = useQuery({
     queryKey: ["collectionRequests", "Completed"],
     queryFn: () => collectionRequestService.getAll({ Status: "Completed", PageSize: 50 }),
+    enabled: isApproved,
   });
 
   const offeredCount   = offeredData?.totalCount   ?? 0;
@@ -199,16 +221,40 @@ const EnterpriseDashboard = () => {
   const { data: pendingProofsData,  isLoading: pendingProofsLoading  } = useQuery({
     queryKey: ["collectorProofs", "Pending"],
     queryFn:  () => collectorProofService.getForEnterprise({ reviewStatus: "Pending",  pageSize: 50 }),
+    enabled: isApproved,
   });
   const { data: approvedProofsData, isLoading: approvedProofsLoading } = useQuery({
     queryKey: ["collectorProofs", "Approved"],
     queryFn:  () => collectorProofService.getForEnterprise({ reviewStatus: "Approved", pageSize: 50 }),
+    enabled: isApproved,
   });
   const { data: rejectedProofsData, isLoading: rejectedProofsLoading } = useQuery({
     queryKey: ["collectorProofs", "Rejected"],
     queryFn:  () => collectorProofService.getForEnterprise({ reviewStatus: "Rejected", pageSize: 50 }),
+    enabled: isApproved,
   });
   const pendingProofsCount = pendingProofsData?.totalCount ?? 0;
+
+  const complaintParams =
+    complaintStatusFilter === "all"
+      ? { pageNumber: 1, pageSize: 50 }
+      : { pageNumber: 1, pageSize: 50, status: complaintStatusFilter };
+
+  const {
+    data: enterpriseComplaintsData,
+    isLoading: enterpriseComplaintsLoading,
+  } = useEnterpriseComplaints(complaintParams, isApproved);
+  const {
+    data: selectedComplaint,
+    isLoading: selectedComplaintLoading,
+  } = useEnterpriseComplaintDetail(selectedComplaintId);
+  const {
+    data: selectedComplaintResolutions = [],
+    isLoading: selectedComplaintResolutionsLoading,
+  } = useDisputeResolutionsByComplaint(selectedComplaintId);
+
+  const createDisputeResolution = useCreateDisputeResolution();
+  const complaintList = enterpriseComplaintsData?.items ?? [];
 
   // ── collection request mutations ──
   const acceptReq = useMutation({
@@ -292,33 +338,34 @@ const EnterpriseDashboard = () => {
   const { data: areaData, isLoading: areaLoading } = useQuery({
     queryKey: ["serviceAreas", enterpriseId],
     queryFn: () => serviceAreaService.getAll({ EnterpriseId: enterpriseId, PageSize: 50 }),
-    enabled: !!enterpriseId,
+    enabled: isApproved && !!enterpriseId,
   });
 
   // District + Ward for area dialog
   const { data: districtsData } = useQuery({
     queryKey: ["districts"],
     queryFn: () => districtService.getAll({ PageSize: 100 }),
-    enabled: !!areaDialog,
+    enabled: isApproved && !!areaDialog,
   });
   const districts = districtsData?.items ?? [];
 
   const { data: wardsData } = useQuery({
     queryKey: ["wards", areaDistrictId],
     queryFn: () => wardService.getAll({ DistrictId: areaDistrictId, PageSize: 100 }),
-    enabled: !!areaDistrictId,
+    enabled: isApproved && !!areaDistrictId,
   });
   const wards = wardsData?.items ?? [];
 
   const { data: capData, isLoading: capLoading } = useQuery({
     queryKey: ["wasteCapabilities", enterpriseId],
     queryFn: () => wasteCapabilityService.getAll({ EnterpriseId: enterpriseId, PageSize: 50 }),
-    enabled: !!enterpriseId,
+    enabled: isApproved && !!enterpriseId,
   });
 
   const { data: allWasteTypes = [] } = useQuery({
     queryKey: ["wasteTypes"],
     queryFn: () => wasteTypeService.getAll(),
+    enabled: isApproved,
   });
   const activeWasteTypes = allWasteTypes.filter((w) => w.isActive !== false);
 
@@ -326,6 +373,7 @@ const EnterpriseDashboard = () => {
   const { data: collectors = [], isLoading: collectorsLoading } = useQuery({
     queryKey: ["myCollectors"],
     queryFn: () => collectorService.getMyCollectors(),
+    enabled: isApproved,
   });
 
   const createCollector = useMutation({
@@ -436,6 +484,33 @@ const EnterpriseDashboard = () => {
     }
   };
 
+  const submitComplaintResponse = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedComplaintId || !selectedComplaint) return;
+    if (selectedComplaint.status !== "InReview") {
+      toast.error("Chỉ có thể phản hồi khi khiếu nại đang ở trạng thái Đang xem xét");
+      return;
+    }
+    if (!disputeResponseNote.trim()) {
+      toast.error("Vui lòng nhập nội dung phản hồi");
+      return;
+    }
+
+    try {
+      await createDisputeResolution.mutateAsync({
+        complaintId: selectedComplaintId,
+        responseNote: disputeResponseNote.trim(),
+      });
+      toast.success("Đã gửi phản hồi khiếu nại");
+      setDisputeResponseNote("");
+    } catch (error) {
+      const message =
+        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        "Gửi phản hồi thất bại";
+      toast.error(message);
+    }
+  };
+
   const areaSubmitting  = createArea.isPending;
   const capSubmitting   = createCap.isPending  || updateCap.isPending;
 
@@ -493,14 +568,14 @@ const EnterpriseDashboard = () => {
       </div>
 
       <Tabs defaultValue="requests">
-        <TabsList>
+        <TabsList className="flex w-full justify-start overflow-x-auto whitespace-nowrap">
           <TabsTrigger value="requests">Yêu cầu thu gom</TabsTrigger>
           <TabsTrigger value="complaints">Khiếu nại</TabsTrigger>
           <TabsTrigger value="proofs" className="gap-1.5">
             <ShieldCheck className="h-4 w-4" />
             Duyệt Proof
             {pendingProofsCount > 0 && (
-              <Badge className="h-5 min-w-5 bg-destructive px-1 text-xs">{pendingProofsCount}</Badge>
+              <Badge className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-xs leading-none">{pendingProofsCount}</Badge>
             )}
           </TabsTrigger>
           <TabsTrigger value="collectors">Collectors</TabsTrigger>
@@ -514,7 +589,7 @@ const EnterpriseDashboard = () => {
         {/* ── Tab: Yêu cầu ── */}
         <TabsContent value="requests">
           <Tabs value={reqStatusTab} onValueChange={(v) => setReqStatusTab(v as typeof reqStatusTab)}>
-            <TabsList className="mb-4 flex-wrap">
+            <TabsList className="mb-4 flex w-full justify-start overflow-x-auto whitespace-nowrap">
               <TabsTrigger value="Offered" className="gap-1.5">
                 Chờ phản hồi
                 {offeredCount > 0 && <Badge className="h-5 min-w-5 px-1 text-xs">{offeredCount}</Badge>}
@@ -612,7 +687,7 @@ const EnterpriseDashboard = () => {
           </Tabs>
         </TabsContent>
 
-        <TabsContent value="complaints">
+        <TabsContent value="complaints-legacy">
           <Card className="shadow-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 font-display text-base">
@@ -635,13 +710,110 @@ const EnterpriseDashboard = () => {
         </TabsContent>
 
         {/* ══ Tab: Duyệt Proof ══ */}
+        <TabsContent value="complaints">
+          <Card className="shadow-card">
+            <CardHeader className="gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 font-display text-base">
+                  <AlertCircle className="h-5 w-5 text-amber-600" /> Khiếu nại doanh nghiệp
+                </CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Theo dõi complaint liên quan đến doanh nghiệp và phản hồi khi khiếu nại đang được xem xét.
+                </p>
+              </div>
+              <div className="w-full sm:w-56">
+                <Select value={complaintStatusFilter} onValueChange={(value) => setComplaintStatusFilter(value as typeof complaintStatusFilter)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Lọc theo trạng thái" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tất cả trạng thái</SelectItem>
+                    <SelectItem value="Open">Mở</SelectItem>
+                    <SelectItem value="InReview">Đang xem xét</SelectItem>
+                    <SelectItem value="EnterpriseResponded">Đã phản hồi</SelectItem>
+                    <SelectItem value="Resolved">Đã giải quyết</SelectItem>
+                    <SelectItem value="Rejected">Từ chối</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {enterpriseComplaintsLoading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <Card key={i} className="shadow-sm">
+                      <CardContent className="space-y-3 p-4">
+                        <Skeleton className="h-4 w-40" />
+                        <Skeleton className="h-4 w-full" />
+                        <Skeleton className="h-4 w-2/3" />
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : complaintList.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
+                  <AlertCircle className="h-10 w-10 opacity-40" />
+                  <p className="text-sm">Không có khiếu nại nào phù hợp bộ lọc hiện tại</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {complaintList.map((complaint: Complaint) => {
+                    const meta = COMPLAINT_STATUS_META[complaint.status as ComplaintStatus] ?? {
+                      label: complaint.status,
+                      variant: "secondary" as const,
+                    };
+
+                    return (
+                      <Card
+                        key={complaint.id}
+                        className="cursor-pointer border-border/70 shadow-sm transition-shadow hover:shadow-card"
+                        onClick={() => {
+                          setSelectedComplaintId(complaint.id);
+                          setDisputeResponseNote("");
+                        }}
+                      >
+                        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant="secondary" className="text-xs">
+                                {COMPLAINT_TYPE_LABEL[complaint.type] ?? complaint.type}
+                              </Badge>
+                              <Badge variant={meta.variant ?? "default"} className={meta.badgeClass ?? "text-xs"}>
+                                {meta.label}
+                              </Badge>
+                            </div>
+                            <p className="line-clamp-2 text-sm font-medium text-foreground">{complaint.content}</p>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                              <span>Report: {complaint.reportId}</span>
+                              <span>Yêu cầu: {complaint.collectionRequestId ?? "Không có"}</span>
+                              <span>Tạo lúc: {complaint.createdTime ? new Date(complaint.createdTime).toLocaleString("vi-VN") : "—"}</span>
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            {complaint.status === "InReview" && (
+                              <Badge className="bg-blue-50 text-blue-700 hover:bg-blue-50">Phản hồi được</Badge>
+                            )}
+                            <Button size="sm" variant="outline">
+                              <Eye className="mr-1 h-4 w-4" /> Chi tiết
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="proofs">
           <Tabs value={proofReviewTab} onValueChange={(v) => setProofReviewTab(v as typeof proofReviewTab)}>
-            <TabsList className="mb-4">
+            <TabsList className="mb-4 flex w-full justify-start overflow-x-auto whitespace-nowrap">
               <TabsTrigger value="Pending" className="gap-1.5">
                 Chờ duyệt
                 {pendingProofsCount > 0 && (
-                  <Badge className="h-5 min-w-5 px-1 text-xs">{pendingProofsCount}</Badge>
+                  <Badge className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs leading-none">{pendingProofsCount}</Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="Approved">Đã duyệt</TabsTrigger>
@@ -737,7 +909,7 @@ const EnterpriseDashboard = () => {
 
         {/* ── Tab: Collectors ── */}
         <TabsContent value="collectors">
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-muted-foreground">{collectors.length} collector</p>
             <Button size="sm" onClick={() => setCollectorDialog(true)}>
               <Plus className="mr-1 h-4 w-4" /> Thêm collector
@@ -1044,7 +1216,7 @@ const EnterpriseDashboard = () => {
       {/* ══ Dialog: Collection Request Detail ══ */}
       <Dialog open={!!selectedRequest} onOpenChange={(o) => { if (!o) setSelectedRequest(null); }}>
         {selectedRequest && (
-          <DialogContent className="sm:max-w-lg">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-lg">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 Chi tiết yêu cầu thu gom
@@ -1056,32 +1228,31 @@ const EnterpriseDashboard = () => {
               {/* Info rows */}
               <div className="space-y-2 rounded-lg border p-3">
                 {[
-                  { label: "Mã yêu cầu",  value: selectedRequest.id },
                   { label: "Loại rác",     value: selectedRequest.wasteTypeName ?? "—" },
                   { label: "Độ ưu tiên",   value: String(selectedRequest.priorityScore) },
                   { label: "Mã khu vực",   value: selectedRequest.regionCode ?? "—" },
                   { label: "Toạ độ",       value: selectedRequest.latitude != null ? `${selectedRequest.latitude.toFixed(6)}, ${selectedRequest.longitude?.toFixed(6)}` : "—" },
                   { label: "Ngày tạo",     value: new Date(selectedRequest.createdTime).toLocaleString("vi-VN") },
                 ].map(({ label, value }) => (
-                  <div key={label} className="flex justify-between gap-4">
+                  <div key={label} className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
                     <span className="text-muted-foreground">{label}</span>
                     <span className="max-w-[60%] break-all text-right font-medium text-foreground">{value}</span>
                   </div>
                 ))}
                 {selectedRequest.note && (
-                  <div className="flex justify-between gap-4 border-t pt-2">
+                  <div className="flex flex-col gap-1 border-t pt-2 sm:flex-row sm:justify-between sm:gap-4">
                     <span className="text-muted-foreground">Ghi chú</span>
                     <span className="max-w-[60%] text-right text-foreground">{selectedRequest.note}</span>
                   </div>
                 )}
                 {selectedRequest.rejectReasonName && (
-                  <div className="flex justify-between gap-4 border-t pt-2">
+                  <div className="flex flex-col gap-1 border-t pt-2 sm:flex-row sm:justify-between sm:gap-4">
                     <span className="text-muted-foreground">Lý do từ chối</span>
                     <span className="max-w-[60%] text-right text-destructive font-medium">{selectedRequest.rejectReasonName}</span>
                   </div>
                 )}
                 {selectedRequest.rejectNote && (
-                  <div className="flex justify-between gap-4">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
                     <span className="text-muted-foreground">Ghi chú từ chối</span>
                     <span className="max-w-[60%] text-right text-foreground">{selectedRequest.rejectNote}</span>
                   </div>
@@ -1094,7 +1265,7 @@ const EnterpriseDashboard = () => {
                   <p className="flex items-center gap-1.5 font-medium text-foreground">
                     <ImageIcon className="h-4 w-4 text-primary" /> Hình ảnh
                   </p>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid gap-2 sm:grid-cols-2">
                     {(selectedRequest.imageUrls ?? []).map((url, i) => (
                       <a key={i} href={url} target="_blank" rel="noreferrer">
                         <img
@@ -1164,7 +1335,7 @@ const EnterpriseDashboard = () => {
 
       {/* ══ Dialog: Reject Reason ══ */}
       <Dialog open={!!rejectDialogId} onOpenChange={(o) => { if (!o) { setRejectDialogId(null); setRejectReason(""); } }}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Lý do từ chối</DialogTitle>
           </DialogHeader>
@@ -1184,7 +1355,7 @@ const EnterpriseDashboard = () => {
             </Select>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setRejectDialogId(null); setRejectReason(""); }}>Hủy</Button>
+            <Button variant="outline" onClick={() => { setRejectDialogId(null); setRejectReason(""); }}>{"H\u1ee7y"}</Button>
             <Button
               variant="destructive"
               disabled={rejectReq.isPending || !rejectReason}
@@ -1204,7 +1375,7 @@ const EnterpriseDashboard = () => {
 
       {/* ── Dialog: Add Service Area ── */}
       <Dialog open={!!areaDialog} onOpenChange={(o) => { if (!o) { setAreaDialog(null); setAreaDistrictId(""); setAreaWardId(""); } }}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Thêm khu vực phục vụ</DialogTitle>
           </DialogHeader>
@@ -1247,7 +1418,7 @@ const EnterpriseDashboard = () => {
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setAreaDialog(null)}>Hủy</Button>
+              <Button type="button" variant="outline" onClick={() => setAreaDialog(null)}>{"H\u1ee7y"}</Button>
               <Button type="submit" disabled={areaSubmitting}>
                 {areaSubmitting ? "Đang lưu…" : "Thêm"}
               </Button>
@@ -1258,7 +1429,7 @@ const EnterpriseDashboard = () => {
 
       {/* ── Dialog: Add/Edit Waste Capability ── */}
       <Dialog open={!!capDialog} onOpenChange={(o) => { if (!o) { setCapDialog(null); setCapWasteTypeId(""); setCapKg(""); setCapEditId(null); } }}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{capDialog === "add" ? "Thêm năng lực xử lý rác" : "Sửa công suất xử lý"}</DialogTitle>
           </DialogHeader>
@@ -1292,7 +1463,7 @@ const EnterpriseDashboard = () => {
               />
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCapDialog(null)}>Hủy</Button>
+              <Button type="button" variant="outline" onClick={() => setCapDialog(null)}>{"H\u1ee7y"}</Button>
               <Button type="submit" disabled={capSubmitting}>
                 {capSubmitting ? "Đang lưu…" : capDialog === "add" ? "Thêm" : "Cập nhật"}
               </Button>
@@ -1302,16 +1473,16 @@ const EnterpriseDashboard = () => {
       </Dialog>
       {/* ── Dialog: Create Collector ── */}
       <Dialog open={collectorDialog} onOpenChange={(o) => { if (!o) { setCollectorDialog(false); setColEmail(""); setColPassword(""); setColFullName(""); setShowColPassword(false); } }}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Thêm collector</DialogTitle>
+            <DialogTitle>{"Th\u00eam collector"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={submitCollector} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="colFullName">Họ tên <span className="text-destructive">*</span></Label>
+              <Label htmlFor="colFullName">{"H\u1ecd t\u00ean"} <span className="text-destructive">*</span></Label>
               <Input
                 id="colFullName"
-                placeholder="Nguyễn Văn A"
+                placeholder={"Nguy\u1ec5n V\u0103n A"}
                 value={colFullName}
                 onChange={(e) => setColFullName(e.target.value)}
               />
@@ -1327,12 +1498,12 @@ const EnterpriseDashboard = () => {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="colPassword">Mật khẩu <span className="text-destructive">*</span></Label>
+              <Label htmlFor="colPassword">{"M\u1eadt kh\u1ea9u"} <span className="text-destructive">*</span></Label>
               <div className="relative">
                 <Input
                   id="colPassword"
                   type={showColPassword ? "text" : "password"}
-                  placeholder="Tối thiểu 6 ký tự (gồm in hoa, thường, số và ký tự đặc biệt)"
+                  placeholder={"T\u1ed1i thi\u1ec3u 6 k\u00fd t\u1ef1"}
                   value={colPassword}
                   onChange={(e) => setColPassword(e.target.value)}
                   className="pr-10"
@@ -1342,25 +1513,149 @@ const EnterpriseDashboard = () => {
                   tabIndex={-1}
                   onClick={() => setShowColPassword((v) => !v)}
                   className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-                  aria-label={showColPassword ? "?n m?t kh?u" : "Hi?n m?t kh?u"}
+                  aria-label={showColPassword ? "\u1ea8n m\u1eadt kh\u1ea9u" : "Hi\u1ec7n m\u1eadt kh\u1ea9u"}
                 >
                   {showColPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCollectorDialog(false)}>Hủy</Button>
+              <Button type="button" variant="outline" onClick={() => setCollectorDialog(false)}>{"H\u1ee7y"}</Button>
               <Button type="submit" disabled={createCollector.isPending}>
-                {createCollector.isPending ? "Đang tạo…" : "Tạo collector"}
+                {createCollector.isPending ? "\u0110ang t\u1ea1o..." : "T\u1ea1o collector"}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
       {/* ══ Dialog: Proof Detail / Review ══ */}
+      <Dialog
+        open={!!selectedComplaintId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedComplaintId(null);
+            setDisputeResponseNote("");
+          }
+        }}
+      >
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-amber-600" />
+              Chi tiết khiếu nại
+            </DialogTitle>
+          </DialogHeader>
+
+          {selectedComplaintLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-5 w-1/3" />
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+          ) : !selectedComplaint ? (
+            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              Không tải được chi tiết khiếu nại.
+            </div>
+          ) : (
+            <div className="space-y-5">
+              <div className="space-y-3 rounded-lg border p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary">
+                    {COMPLAINT_TYPE_LABEL[selectedComplaint.type] ?? selectedComplaint.type}
+                  </Badge>
+                  <Badge
+                    variant={COMPLAINT_STATUS_META[selectedComplaint.status as ComplaintStatus]?.variant ?? "default"}
+                    className={COMPLAINT_STATUS_META[selectedComplaint.status as ComplaintStatus]?.badgeClass ?? ""}
+                  >
+                    {COMPLAINT_STATUS_META[selectedComplaint.status as ComplaintStatus]?.label ?? selectedComplaint.status}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-foreground">Nội dung khiếu nại</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{selectedComplaint.content}</p>
+                </div>
+                <div className="grid gap-3 text-sm sm:grid-cols-2">
+                  <div>
+                    <p className="text-muted-foreground">Report ID</p>
+                    <p className="font-medium break-all">{selectedComplaint.reportId}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Collection request ID</p>
+                    <p className="font-medium break-all">{selectedComplaint.collectionRequestId ?? "Không có"}</p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <p className="text-muted-foreground">Thời gian tạo</p>
+                    <p className="font-medium">
+                      {selectedComplaint.createdTime ? new Date(selectedComplaint.createdTime).toLocaleString("vi-VN") : "—"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-lg border p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h3 className="font-medium text-foreground">Lịch sử phản hồi</h3>
+                  <Badge variant="outline">{selectedComplaintResolutions.length} phản hồi</Badge>
+                </div>
+                {selectedComplaintResolutionsLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-16 w-full" />
+                    <Skeleton className="h-16 w-full" />
+                  </div>
+                ) : selectedComplaintResolutions.length === 0 ? (
+                  <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                    Chưa có phản hồi dispute nào cho khiếu nại này.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {selectedComplaintResolutions.map((resolution) => (
+                      <div key={resolution.id} className="rounded-md border bg-muted/20 p-3">
+                        <p className="text-sm font-medium text-foreground">{resolution.responseNote || resolution.resolutionNote || "Không có nội dung"}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {resolution.createdTime ? new Date(resolution.createdTime).toLocaleString("vi-VN") : "—"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {selectedComplaint.status === "InReview" ? (
+                <form onSubmit={submitComplaintResponse} className="space-y-3 rounded-lg border p-4">
+                  <div>
+                    <Label htmlFor="enterpriseDisputeResponse">Phản hồi của doanh nghiệp</Label>
+                    <Textarea
+                      id="enterpriseDisputeResponse"
+                      rows={4}
+                      className="mt-2"
+                      placeholder="Nhập nội dung phản hồi cho complaint này..."
+                      value={disputeResponseNote}
+                      onChange={(e) => setDisputeResponseNote(e.target.value)}
+                      disabled={createDisputeResolution.isPending}
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => { setSelectedComplaintId(null); setDisputeResponseNote(""); }}>
+                      {"H\u1ee7y"}
+                    </Button>
+                    <Button type="submit" disabled={createDisputeResolution.isPending || !disputeResponseNote.trim()}>
+                      {createDisputeResolution.isPending ? "Đang gửi..." : "Gửi phản hồi"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              ) : (
+                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                  Khiếu nại này không còn ở trạng thái Đang xem xét nên doanh nghiệp không thể phản hồi thêm.
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!selectedProof} onOpenChange={(o) => { if (!o) { setSelectedProof(null); setReviewNote(""); } }}>
         {selectedProof && (
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-lg">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <ShieldCheck className="h-5 w-5 text-primary" />
@@ -1387,24 +1682,23 @@ const EnterpriseDashboard = () => {
             {/* Details */}
             <div className="space-y-2 rounded-lg border p-3 text-sm">
               {[
-                { label: "Mã giao việc",      value: selectedProof.assignmentId },
                 { label: "Loại rác",           value: selectedProof.wasteTypeName ?? "—" },
                 { label: "Khu vực",            value: selectedProof.regionCode ?? "—" },
                 { label: "Thời gian thu gom",  value: selectedProof.collectedAt ? new Date(selectedProof.collectedAt).toLocaleString("vi-VN") : "—" },
               ].map(({ label, value }) => (
-                <div key={label} className="flex justify-between gap-4">
+                <div key={label} className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
                   <span className="text-muted-foreground">{label}</span>
                   <span className="max-w-[60%] break-all text-right font-medium text-foreground">{value}</span>
                 </div>
               ))}
               {selectedProof.note && (
-                <div className="flex justify-between gap-4 border-t pt-2">
+                <div className="flex flex-col gap-1 border-t pt-2 sm:flex-row sm:justify-between sm:gap-4">
                   <span className="text-muted-foreground">Ghi chú collector</span>
                   <span className="max-w-[60%] text-right text-foreground">{selectedProof.note}</span>
                 </div>
               )}
               {selectedProof.reviewNote && selectedProof.reviewStatus !== "Pending" && (
-                <div className="flex justify-between gap-4 border-t pt-2">
+                <div className="flex flex-col gap-1 border-t pt-2 sm:flex-row sm:justify-between sm:gap-4">
                   <span className="text-muted-foreground">Nhận xét duyệt</span>
                   <span className={`max-w-[60%] text-right font-medium ${selectedProof.reviewStatus === "Rejected" ? "text-destructive" : "text-green-600"}`}>
                     {selectedProof.reviewNote}
@@ -1456,3 +1750,6 @@ const EnterpriseDashboard = () => {
 };
 
 export default EnterpriseDashboard;
+
+
+

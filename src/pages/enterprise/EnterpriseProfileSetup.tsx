@@ -67,13 +67,13 @@ const EnterpriseProfileSetup = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!licenseFile) {
-      toast.error("Vui lòng tải lên giấy phép môi trường");
+      toast.error("Vui l??ng t???i l??n gi???y ph??p m??i tr?????ng");
       return;
     }
 
     setSubmitting(true);
     try {
-      // Step 1: Create profile with placeholder UUID (documents API needs profile to exist first)
+      // Step 1: Create/update profile before attaching the environment license document
       await recyclingEnterpriseService.updateProfile({
         ...form,
         environmentLicenseFileId: NIL_UUID,
@@ -85,21 +85,26 @@ const EnterpriseProfileSetup = () => {
         const doc = await enterpriseDocumentsService.upload(0, licenseFile);
         licenseFileId = doc.id;
       } catch {
-        toast.warning("Hồ sơ đã tạo nhưng tải giấy phép thất bại. Bạn có thể cập nhật sau.");
+        toast.warning("H??? s?? ???? t???o nh??ng t???i gi???y ph??p th???t b???i. B???n c?? th??? c???p nh???t sau.");
       }
 
-      // Step 3: Update profile with real document ID
+      // Step 3: Persist which uploaded document is the environment license
       if (licenseFileId !== NIL_UUID) {
-        await recyclingEnterpriseService.updateProfile({
-          ...form,
-          environmentLicenseFileId: licenseFileId,
+        await recyclingEnterpriseService.setEnvironmentLicense({
+          documentId: licenseFileId,
         });
       }
 
-      toast.success("Đăng ký hồ sơ doanh nghiệp thành công! Đang chờ phê duyệt.");
+      // Step 4: Submit the enterprise profile for admin approval
+      await recyclingEnterpriseService.submitProfile({
+        note: "Da hoan tat ho so",
+      });
+
+      toast.success("????ng k?? h??? s?? doanh nghi???p th??nh c??ng! ??ang ch??? ph?? duy???t.");
       await qc.invalidateQueries({ queryKey: ["enterpriseProfile"] });
+      await qc.invalidateQueries({ queryKey: ["enterpriseProfile", "documents"] });
     } catch {
-      toast.error("Đăng ký thất bại. Vui lòng thử lại.");
+      toast.error("????ng k?? th???t b???i. Vui l??ng th??? l???i.");
     } finally {
       setSubmitting(false);
     }

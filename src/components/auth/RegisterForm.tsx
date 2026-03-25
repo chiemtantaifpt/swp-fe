@@ -266,7 +266,6 @@ export default function RegisterForm() {
               <SelectContent>
                 <SelectItem value="Citizen">Công dân</SelectItem>
                 <SelectItem value="Enterprise">Doanh nghiệp tái chế</SelectItem>
-                <SelectItem value="Collector">Người thu gom</SelectItem>
               </SelectContent>
             </Select>
           </div>

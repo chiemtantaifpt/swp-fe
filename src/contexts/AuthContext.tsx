@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import { authService } from "@/services/auth";
 import type { EnterpriseInfo } from "@/services/auth";
 import queryClient from "@/lib/queryClient";
+import { userProfileService } from "@/services/userProfile";
 
 export type UserRole = "Citizen" | "Enterprise" | "Collector" | "Admin";
 
@@ -57,6 +58,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const userData = authService.getUserAfterLogin(token);
         setUser(userData);
         localStorage.setItem("eco_user", JSON.stringify(userData));
+        void userProfileService.getMe()
+          .then((profile) => {
+            const profileUser = userProfileService.toAuthUser(profile);
+            setUser(profileUser);
+            localStorage.setItem("eco_user", JSON.stringify(profileUser));
+          })
+          .catch(() => {
+            // Keep decoded JWT user as a safe fallback when profile API is unavailable.
+          });
       } catch {
         localStorage.removeItem("eco_token");
         localStorage.removeItem("eco_refresh_token");
@@ -75,9 +85,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       localStorage.setItem("eco_token", tokenResponse.accessToken);
       localStorage.setItem("eco_refresh_token", tokenResponse.refreshToken ?? "");
-      const userData = authService.getUserAfterLogin(tokenResponse.accessToken);
-      localStorage.setItem("eco_user", JSON.stringify(userData));
-      setUser(userData);
+      const decodedUser = authService.getUserAfterLogin(tokenResponse.accessToken);
+      localStorage.setItem("eco_user", JSON.stringify(decodedUser));
+      setUser(decodedUser);
+      try {
+        const profile = await userProfileService.getMe();
+        const profileUser = userProfileService.toAuthUser(profile);
+        localStorage.setItem("eco_user", JSON.stringify(profileUser));
+        setUser(profileUser);
+      } catch {
+        // If profile API fails right after login, keep the decoded JWT data.
+      }
       return true;
     } finally {
       setLoading(false);
