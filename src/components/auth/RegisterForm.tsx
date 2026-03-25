@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, Loader2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
@@ -33,6 +33,8 @@ export default function RegisterForm() {
   const [showLocationFields, setShowLocationFields] = useState(false);
   const [districtId, setDistrictId] = useState("");
   const [wardId, setWardId] = useState("");
+  const [districtKeyword, setDistrictKeyword] = useState("");
+  const [wardKeyword, setWardKeyword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -42,41 +44,52 @@ export default function RegisterForm() {
   const navigate = useNavigate();
   const isCitizen = role === "Citizen";
 
-  const { data: districtPage } = useQuery({
+  const { data: districts = [] } = useQuery({
     queryKey: ["registerDistricts"],
-    queryFn: () => districtService.getAll({ PageNumber: 1, PageSize: 100 }),
+    queryFn: () => districtService.getAllItems({ PageSize: 100 }),
     enabled: isCitizen && showLocationFields,
   });
-  const districts = districtPage?.items ?? [];
 
-  const { data: wardPage } = useQuery({
+  const { data: wards = [] } = useQuery({
     queryKey: ["registerWards", districtId],
-    queryFn: () => wardService.getAll({ DistrictId: districtId, PageNumber: 1, PageSize: 100 }),
+    queryFn: () => wardService.getAllItems({ DistrictId: districtId, PageSize: 100 }),
     enabled: isCitizen && showLocationFields && !!districtId,
   });
-  const wards = wardPage?.items ?? [];
+
+  const filteredDistricts = useMemo(() => {
+    const keyword = districtKeyword.trim().toLowerCase();
+    if (!keyword) return districts;
+    return districts.filter((district) => district.name.toLowerCase().includes(keyword));
+  }, [districtKeyword, districts]);
+
+  const filteredWards = useMemo(() => {
+    const keyword = wardKeyword.trim().toLowerCase();
+    if (!keyword) return wards;
+    return wards.filter((ward) => ward.name.toLowerCase().includes(keyword));
+  }, [wardKeyword, wards]);
 
   const clearError = (field: keyof FieldErrors) =>
     setErrors((prev) => ({ ...prev, [field]: undefined }));
 
   const validate = () => {
-    const e: FieldErrors = {};
-    if (!name.trim()) e.name = "Vui lòng nhập họ tên";
-    if (!phone.trim()) e.phone = "Vui lòng nhập số điện thoại";
+    const nextErrors: FieldErrors = {};
+    if (!name.trim()) nextErrors.name = "Vui lòng nhập họ tên";
+    if (!phone.trim()) nextErrors.phone = "Vui lòng nhập số điện thoại";
     else if (!/^(0|\+84)\d{9}$/.test(phone.replace(/\s/g, ""))) {
-      e.phone = "Số điện thoại không hợp lệ (VD: 0901234567)";
+      nextErrors.phone = "Số điện thoại không hợp lệ (VD: 0901234567)";
     }
-    if (!email.trim()) e.email = "Vui lòng nhập email";
+    if (!email.trim()) nextErrors.email = "Vui lòng nhập email";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      e.email = "Email không đúng định dạng";
+      nextErrors.email = "Email không đúng định dạng";
     }
-    if (!password) e.password = "Vui lòng nhập mật khẩu";
-    else if (password.length < 6) e.password = "Tối thiểu 6 ký tự";
-    else if (!/\d/.test(password)) e.password = "Phải chứa ít nhất 1 chữ số";
-    if (!confirmPassword) e.confirmPassword = "Vui lòng xác nhận mật khẩu";
-    else if (password !== confirmPassword) e.confirmPassword = "Mật khẩu không trùng khớp";
-    setErrors(e);
-    return Object.keys(e).length === 0;
+    if (!password) nextErrors.password = "Vui lòng nhập mật khẩu";
+    else if (password.length < 6) nextErrors.password = "Tối thiểu 6 ký tự";
+    else if (!/\d/.test(password)) nextErrors.password = "Phải chứa ít nhất 1 chữ số";
+    if (!confirmPassword) nextErrors.confirmPassword = "Vui lòng xác nhận mật khẩu";
+    else if (password !== confirmPassword) nextErrors.confirmPassword = "Mật khẩu không trùng khớp";
+
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
   };
 
   const handleSubmit = async (ev: React.FormEvent | React.MouseEvent) => {
@@ -140,7 +153,10 @@ export default function RegisterForm() {
                 id="reg-name"
                 placeholder="Nguyễn Văn A"
                 value={name}
-                onChange={(e) => { setName(e.target.value); clearError("name"); }}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  clearError("name");
+                }}
                 disabled={loading}
                 className={`border-white/45 bg-white/45 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 ${
                   errors.name ? "border-destructive focus-visible:ring-destructive/50" : ""
@@ -157,7 +173,10 @@ export default function RegisterForm() {
                 type="tel"
                 placeholder="0901234567"
                 value={phone}
-                onChange={(e) => { setPhone(e.target.value); clearError("phone"); }}
+                onChange={(e) => {
+                  setPhone(e.target.value);
+                  clearError("phone");
+                }}
                 disabled={loading}
                 className={`border-white/45 bg-white/45 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 ${
                   errors.phone ? "border-destructive focus-visible:ring-destructive/50" : ""
@@ -175,7 +194,10 @@ export default function RegisterForm() {
               type="email"
               placeholder="your@email.com"
               value={email}
-              onChange={(e) => { setEmail(e.target.value); clearError("email"); }}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                clearError("email");
+              }}
               disabled={loading}
               className={`border-white/45 bg-white/45 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 ${
                 errors.email ? "border-destructive focus-visible:ring-destructive/50" : ""
@@ -193,7 +215,10 @@ export default function RegisterForm() {
                 type={showPw ? "text" : "password"}
                 placeholder="••••••••"
                 value={password}
-                onChange={(e) => { setPassword(e.target.value); clearError("password"); }}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  clearError("password");
+                }}
                 disabled={loading}
                 className={`border-white/45 bg-white/45 pr-10 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 ${
                   errors.password ? "border-destructive focus-visible:ring-destructive/50" : ""
@@ -203,7 +228,7 @@ export default function RegisterForm() {
               <button
                 type="button"
                 tabIndex={-1}
-                onClick={() => setShowPw((v) => !v)}
+                onClick={() => setShowPw((value) => !value)}
                 disabled={loading}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
                 aria-label={showPw ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
@@ -222,7 +247,10 @@ export default function RegisterForm() {
                 type={showConfirmPw ? "text" : "password"}
                 placeholder="••••••••"
                 value={confirmPassword}
-                onChange={(e) => { setConfirmPassword(e.target.value); clearError("confirmPassword"); }}
+                onChange={(e) => {
+                  setConfirmPassword(e.target.value);
+                  clearError("confirmPassword");
+                }}
                 disabled={loading}
                 className={`border-white/45 bg-white/45 pr-10 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 ${
                   errors.confirmPassword ? "border-destructive focus-visible:ring-destructive/50" : ""
@@ -232,7 +260,7 @@ export default function RegisterForm() {
               <button
                 type="button"
                 tabIndex={-1}
-                onClick={() => setShowConfirmPw((v) => !v)}
+                onClick={() => setShowConfirmPw((value) => !value)}
                 disabled={loading}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
                 aria-label={showConfirmPw ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
@@ -249,13 +277,15 @@ export default function RegisterForm() {
             <Label>Vai trò</Label>
             <Select
               value={role}
-              onValueChange={(v) => {
-                const nextRole = v as UserRole;
+              onValueChange={(value) => {
+                const nextRole = value as UserRole;
                 setRole(nextRole);
                 if (nextRole !== "Citizen") {
                   setShowLocationFields(false);
                   setDistrictId("");
                   setWardId("");
+                  setDistrictKeyword("");
+                  setWardKeyword("");
                 }
               }}
               disabled={loading}
@@ -269,13 +299,14 @@ export default function RegisterForm() {
               </SelectContent>
             </Select>
           </div>
+
           {isCitizen && (
             <div className="space-y-3 rounded-2xl border border-white/35 bg-white/20 p-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-sm font-medium text-foreground">{"Hoàn thiện hồ sơ ngay"}</p>
+                  <p className="text-sm font-medium text-foreground">Hoàn thiện hồ sơ ngay</p>
                   <p className="text-xs text-muted-foreground">
-                    {"Giúp hệ thống hiển thị bảng xếp hạng phù hợp với khu vực của bạn."}
+                    Giúp hệ thống hiển thị bảng xếp hạng phù hợp với khu vực của bạn.
                   </p>
                 </div>
                 <Button
@@ -286,6 +317,8 @@ export default function RegisterForm() {
                     if (showLocationFields) {
                       setDistrictId("");
                       setWardId("");
+                      setDistrictKeyword("");
+                      setWardKeyword("");
                     }
                     setShowLocationFields((prev) => !prev);
                   }}
@@ -298,12 +331,20 @@ export default function RegisterForm() {
               {showLocationFields && (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label>{"Quận / Huyện"}</Label>
+                    <Label>Quận / Huyện</Label>
+                    <Input
+                      value={districtKeyword}
+                      onChange={(e) => setDistrictKeyword(e.target.value)}
+                      disabled={loading}
+                      className="border-white/45 bg-white/45 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40"
+                      placeholder="Tìm quận / huyện..."
+                    />
                     <Select
                       value={districtId}
                       onValueChange={(value) => {
                         setDistrictId(value);
                         setWardId("");
+                        setWardKeyword("");
                       }}
                       disabled={loading}
                     >
@@ -311,17 +352,27 @@ export default function RegisterForm() {
                         <SelectValue placeholder="Chọn quận/huyện" />
                       </SelectTrigger>
                       <SelectContent>
-                        {districts.map((district) => (
+                        {filteredDistricts.map((district) => (
                           <SelectItem key={district.id} value={district.id}>
                             {district.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {filteredDistricts.length} quận / huyện phù hợp
+                    </p>
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label>{"Phường / Xã"}</Label>
+                    <Label>Phường / Xã</Label>
+                    <Input
+                      value={wardKeyword}
+                      onChange={(e) => setWardKeyword(e.target.value)}
+                      disabled={loading || !districtId}
+                      className="border-white/45 bg-white/45 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40"
+                      placeholder="Tìm phường / xã..."
+                    />
                     <Select
                       value={wardId}
                       onValueChange={setWardId}
@@ -331,19 +382,21 @@ export default function RegisterForm() {
                         <SelectValue placeholder={districtId ? "Chọn phường/xã" : "Chọn quận/huyện trước"} />
                       </SelectTrigger>
                       <SelectContent>
-                        {wards.map((ward) => (
+                        {filteredWards.map((ward) => (
                           <SelectItem key={ward.id} value={ward.id}>
                             {ward.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {filteredWards.length} phường / xã phù hợp
+                    </p>
                   </div>
                 </div>
               )}
             </div>
           )}
-
 
           <Button
             type="button"

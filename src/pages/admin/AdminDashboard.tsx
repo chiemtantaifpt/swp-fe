@@ -48,6 +48,70 @@ const enterpriseApprovalStatusLabels: Record<string, string> = {
   Rejected: "Từ chối",
 };
 
+const LOCATION_PAGE_SIZE = 10;
+
+interface LocationPaginationProps {
+  pageNumber: number;
+  pageSize: number;
+  totalCount: number;
+  onPageChange: (pageNumber: number) => void;
+}
+
+const LocationPagination = ({
+  pageNumber,
+  pageSize,
+  totalCount,
+  onPageChange,
+}: LocationPaginationProps) => {
+  if (totalCount === 0) return null;
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const startItem = (pageNumber - 1) * pageSize + 1;
+  const endItem = Math.min(pageNumber * pageSize, totalCount);
+
+  return (
+    <div className="mt-4 flex flex-col gap-2 border-t border-border pt-3 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-xs text-muted-foreground">
+        Hiển thị {startItem}-{endItem} / {totalCount}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={pageNumber <= 1}
+          onClick={() => onPageChange(pageNumber - 1)}
+        >
+          Trước
+        </Button>
+        <span className="min-w-20 text-center text-xs text-muted-foreground">
+          Trang {pageNumber}/{totalPages}
+        </span>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={pageNumber >= totalPages}
+          onClick={() => onPageChange(pageNumber + 1)}
+        >
+          Sau
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+const toLocationCode = (value: string): string =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_")
+    .toUpperCase();
+
 // ─── WasteType Form Dialog ────────────────────────────────────────────────────
 interface WasteTypeFormProps {
   open: boolean;
@@ -353,6 +417,12 @@ const AdminDashboard = () => {
   const [quickProvinceCode, setQuickProvinceCode] = useState("79");
   const [quickWardName, setQuickWardName] = useState("");
   const [quickWardCode, setQuickWardCode] = useState("");
+  const [districtPageNumber, setDistrictPageNumber] = useState(1);
+  const [wardPageNumber, setWardPageNumber] = useState(1);
+  const [districtCodeEdited, setDistrictCodeEdited] = useState(false);
+  const [wardCodeEdited, setWardCodeEdited] = useState(false);
+  const [quickDistrictCodeEdited, setQuickDistrictCodeEdited] = useState(false);
+  const [quickWardCodeEdited, setQuickWardCodeEdited] = useState(false);
 
   const {
     data: enterpriseApprovals,
@@ -551,16 +621,69 @@ const AdminDashboard = () => {
   });
 
   const { data: districtPage, isLoading: districtLoading } = useQuery({
-    queryKey: ["districts", "admin"],
-    queryFn: () => districtService.getAll({ PageNumber: 1, PageSize: 100 }),
+    queryKey: ["districts", "admin", districtPageNumber, LOCATION_PAGE_SIZE],
+    queryFn: () =>
+      districtService.getAll({
+        PageNumber: districtPageNumber,
+        PageSize: LOCATION_PAGE_SIZE,
+      }),
   });
   const districts = districtPage?.items ?? [];
+  const totalDistricts = districtPage?.totalCount ?? 0;
+  const totalDistrictPages = Math.max(1, Math.ceil(totalDistricts / LOCATION_PAGE_SIZE));
+
+  const { data: districtOptions = [] } = useQuery({
+    queryKey: ["districts", "admin", "all-options"],
+    queryFn: () => districtService.getAllItems({ PageSize: 100 }),
+  });
 
   const { data: wardPage, isLoading: wardLoading } = useQuery({
-    queryKey: ["wards", "admin"],
-    queryFn: () => wardService.getAll({ PageNumber: 1, PageSize: 100 }),
+    queryKey: ["wards", "admin", wardPageNumber, LOCATION_PAGE_SIZE],
+    queryFn: () =>
+      wardService.getAll({
+        PageNumber: wardPageNumber,
+        PageSize: LOCATION_PAGE_SIZE,
+      }),
   });
   const wards = wardPage?.items ?? [];
+  const totalWards = wardPage?.totalCount ?? 0;
+  const totalWardPages = Math.max(1, Math.ceil(totalWards / LOCATION_PAGE_SIZE));
+
+  useEffect(() => {
+    if (districtPage && districtPageNumber > totalDistrictPages) {
+      setDistrictPageNumber(totalDistrictPages);
+    }
+  }, [districtPage, districtPageNumber, totalDistrictPages]);
+
+  useEffect(() => {
+    if (wardPage && wardPageNumber > totalWardPages) {
+      setWardPageNumber(totalWardPages);
+    }
+  }, [wardPage, wardPageNumber, totalWardPages]);
+
+  useEffect(() => {
+    if (!districtCodeEdited) {
+      setDistrictCode(toLocationCode(districtName));
+    }
+  }, [districtCodeEdited, districtName]);
+
+  useEffect(() => {
+    if (!wardCodeEdited) {
+      setWardCode(toLocationCode(wardName));
+    }
+  }, [wardCodeEdited, wardName]);
+
+  useEffect(() => {
+    if (!quickDistrictCodeEdited) {
+      setQuickDistrictCode(toLocationCode(quickDistrictName));
+    }
+  }, [quickDistrictCodeEdited, quickDistrictName]);
+
+  useEffect(() => {
+    if (!quickWardCodeEdited) {
+      setQuickWardCode(toLocationCode(quickWardName));
+    }
+  }, [quickWardCodeEdited, quickWardName]);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => wasteTypeService.delete(id),
@@ -581,9 +704,11 @@ const AdminDashboard = () => {
     onSuccess: () => {
       toast.success("Đã tạo quận/huyện thành công");
       qc.invalidateQueries({ queryKey: ["districts", "admin"] });
+      setDistrictPageNumber(1);
       setDistrictDialogOpen(false);
       setDistrictName("");
       setDistrictCode("");
+      setDistrictCodeEdited(false);
       setProvinceCode("79");
     },
     onError: () => toast.error("Tạo quận/huyện thất bại"),
@@ -599,10 +724,12 @@ const AdminDashboard = () => {
     onSuccess: () => {
       toast.success("Đã tạo phường/xã thành công");
       qc.invalidateQueries({ queryKey: ["wards", "admin"] });
+      setWardPageNumber(1);
       setWardDialogOpen(false);
       setWardDistrictId("");
       setWardName("");
       setWardCode("");
+      setWardCodeEdited(false);
     },
     onError: () => toast.error("Tạo phường/xã thất bại"),
   });
@@ -624,12 +751,16 @@ const AdminDashboard = () => {
       toast.success("Đã tạo quận/huyện và phường/xã thành công");
       qc.invalidateQueries({ queryKey: ["districts", "admin"] });
       qc.invalidateQueries({ queryKey: ["wards", "admin"] });
+      setDistrictPageNumber(1);
+      setWardPageNumber(1);
       setQuickLocationDialogOpen(false);
       setQuickDistrictName("");
       setQuickDistrictCode("");
+      setQuickDistrictCodeEdited(false);
       setQuickProvinceCode("79");
       setQuickWardName("");
       setQuickWardCode("");
+      setQuickWardCodeEdited(false);
     },
     onError: () => toast.error("Tạo nhanh địa bàn thất bại"),
   });
@@ -1229,42 +1360,58 @@ const AdminDashboard = () => {
                 <div className="rounded-lg border border-border p-4">
                   <div className="mb-3 flex items-center justify-between">
                     <p className="text-sm font-medium text-foreground">Quận / Huyện</p>
-                    <Badge variant="outline">{districts.length}</Badge>
+                    <Badge variant="outline">{totalDistricts}</Badge>
                   </div>
                   {districtLoading ? (
                     <p className="text-sm text-muted-foreground">Đang tải quận/huyện...</p>
-                  ) : districts.length === 0 ? (
+                  ) : totalDistricts === 0 ? (
                     <p className="text-sm text-muted-foreground">Chưa có quận/huyện nào.</p>
                   ) : (
-                    <div className="space-y-2">
-                      {districts.slice(0, 6).map((district) => (
-                        <div key={district.id} className="rounded-md border border-border bg-muted/30 p-3 text-sm">
-                          <p className="font-medium text-foreground">{district.name}</p>
-                          <p className="text-xs text-muted-foreground">Mã: {district.code} · Tỉnh/TP: {district.provinceCode}</p>
-                        </div>
-                      ))}
-                    </div>
+                    <>
+                      <div className="space-y-2">
+                        {districts.map((district) => (
+                          <div key={district.id} className="rounded-md border border-border bg-muted/30 p-3 text-sm">
+                            <p className="font-medium text-foreground">{district.name}</p>
+                            <p className="text-xs text-muted-foreground">Mã: {district.code} · Tỉnh/TP: {district.provinceCode}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <LocationPagination
+                        pageNumber={districtPageNumber}
+                        pageSize={LOCATION_PAGE_SIZE}
+                        totalCount={totalDistricts}
+                        onPageChange={setDistrictPageNumber}
+                      />
+                    </>
                   )}
                 </div>
 
                 <div className="rounded-lg border border-border p-4">
                   <div className="mb-3 flex items-center justify-between">
                     <p className="text-sm font-medium text-foreground">Phường / Xã</p>
-                    <Badge variant="outline">{wards.length}</Badge>
+                    <Badge variant="outline">{totalWards}</Badge>
                   </div>
                   {wardLoading ? (
                     <p className="text-sm text-muted-foreground">Đang tải phường/xã...</p>
-                  ) : wards.length === 0 ? (
+                  ) : totalWards === 0 ? (
                     <p className="text-sm text-muted-foreground">Chưa có phường/xã nào.</p>
                   ) : (
-                    <div className="space-y-2">
-                      {wards.slice(0, 6).map((ward) => (
-                        <div key={ward.id} className="rounded-md border border-border bg-muted/30 p-3 text-sm">
-                          <p className="font-medium text-foreground">{ward.name}</p>
-                          <p className="text-xs text-muted-foreground">{ward.districtName} · Mã: {ward.code}</p>
-                        </div>
-                      ))}
-                    </div>
+                    <>
+                      <div className="space-y-2">
+                        {wards.map((ward) => (
+                          <div key={ward.id} className="rounded-md border border-border bg-muted/30 p-3 text-sm">
+                            <p className="font-medium text-foreground">{ward.name}</p>
+                            <p className="text-xs text-muted-foreground">{ward.districtName} · Mã: {ward.code}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <LocationPagination
+                        pageNumber={wardPageNumber}
+                        pageSize={LOCATION_PAGE_SIZE}
+                        totalCount={totalWards}
+                        onPageChange={setWardPageNumber}
+                      />
+                    </>
                   )}
                 </div>
               </CardContent>
@@ -1404,7 +1551,15 @@ const AdminDashboard = () => {
         }}
       />
 
-      <Dialog open={districtDialogOpen} onOpenChange={(open) => { if (!open) setDistrictDialogOpen(false); }}>
+      <Dialog
+        open={districtDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDistrictDialogOpen(false);
+            setDistrictCodeEdited(false);
+          }
+        }}
+      >
         <DialogContent className="w-[calc(100vw-1rem)] max-w-md">
           <DialogHeader>
             <DialogTitle className="font-display">Thêm quận/huyện</DialogTitle>
@@ -1412,11 +1567,24 @@ const AdminDashboard = () => {
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="districtName">Tên quận/huyện</Label>
-              <Input id="districtName" value={districtName} onChange={(e) => setDistrictName(e.target.value)} placeholder="VD: Quận 1" />
+              <Input
+                id="districtName"
+                value={districtName}
+                onChange={(e) => setDistrictName(e.target.value)}
+                placeholder="VD: Quận 7"
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="districtCode">Mã quận/huyện</Label>
-              <Input id="districtCode" value={districtCode} onChange={(e) => setDistrictCode(e.target.value)} placeholder="VD: D1" />
+              <Input
+                id="districtCode"
+                value={districtCode}
+                onChange={(e) => {
+                  setDistrictCodeEdited(true);
+                  setDistrictCode(e.target.value.toUpperCase());
+                }}
+                placeholder="Tự tạo từ tên, VD: QUAN_7"
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="provinceCode">Mã tỉnh/thành</Label>
@@ -1435,7 +1603,15 @@ const AdminDashboard = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={wardDialogOpen} onOpenChange={(open) => { if (!open) setWardDialogOpen(false); }}>
+      <Dialog
+        open={wardDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setWardDialogOpen(false);
+            setWardCodeEdited(false);
+          }
+        }}
+      >
         <DialogContent className="w-[calc(100vw-1rem)] max-w-md">
           <DialogHeader>
             <DialogTitle className="font-display">Thêm phường/xã</DialogTitle>
@@ -1448,7 +1624,7 @@ const AdminDashboard = () => {
                   <SelectValue placeholder="Chọn quận/huyện..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {districts.map((district) => (
+                  {districtOptions.map((district) => (
                     <SelectItem key={district.id} value={district.id}>{district.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -1456,11 +1632,24 @@ const AdminDashboard = () => {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="wardName">Tên phường/xã</Label>
-              <Input id="wardName" value={wardName} onChange={(e) => setWardName(e.target.value)} placeholder="VD: Phường 1" />
+              <Input
+                id="wardName"
+                value={wardName}
+                onChange={(e) => setWardName(e.target.value)}
+                placeholder="VD: Phường 1"
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="wardCode">Mã phường/xã</Label>
-              <Input id="wardCode" value={wardCode} onChange={(e) => setWardCode(e.target.value)} placeholder="VD: W1" />
+              <Input
+                id="wardCode"
+                value={wardCode}
+                onChange={(e) => {
+                  setWardCodeEdited(true);
+                  setWardCode(e.target.value.toUpperCase());
+                }}
+                placeholder="Tự tạo từ tên, VD: PHUONG_1"
+              />
             </div>
           </div>
           <DialogFooter>
@@ -1475,7 +1664,16 @@ const AdminDashboard = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={quickLocationDialogOpen} onOpenChange={(open) => { if (!open) setQuickLocationDialogOpen(false); }}>
+      <Dialog
+        open={quickLocationDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setQuickLocationDialogOpen(false);
+            setQuickDistrictCodeEdited(false);
+            setQuickWardCodeEdited(false);
+          }
+        }}
+      >
         <DialogContent className="w-[calc(100vw-1rem)] max-w-lg">
           <DialogHeader>
             <DialogTitle className="font-display">Tạo nhanh quận/huyện và phường/xã</DialogTitle>
@@ -1485,11 +1683,24 @@ const AdminDashboard = () => {
               <p className="text-sm font-medium text-foreground">Quận / Huyện</p>
               <div className="space-y-1.5">
                 <Label htmlFor="quickDistrictName">Tên</Label>
-                <Input id="quickDistrictName" value={quickDistrictName} onChange={(e) => setQuickDistrictName(e.target.value)} placeholder="VD: Quận 1" />
+                <Input
+                  id="quickDistrictName"
+                  value={quickDistrictName}
+                  onChange={(e) => setQuickDistrictName(e.target.value)}
+                  placeholder="VD: Quận 7"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="quickDistrictCode">Mã</Label>
-                <Input id="quickDistrictCode" value={quickDistrictCode} onChange={(e) => setQuickDistrictCode(e.target.value)} placeholder="VD: D1" />
+                <Input
+                  id="quickDistrictCode"
+                  value={quickDistrictCode}
+                  onChange={(e) => {
+                    setQuickDistrictCodeEdited(true);
+                    setQuickDistrictCode(e.target.value.toUpperCase());
+                  }}
+                  placeholder="Tự tạo từ tên, VD: QUAN_7"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="quickProvinceCode">Mã tỉnh/thành</Label>
@@ -1501,11 +1712,24 @@ const AdminDashboard = () => {
               <p className="text-sm font-medium text-foreground">Phường / Xã</p>
               <div className="space-y-1.5">
                 <Label htmlFor="quickWardName">Tên</Label>
-                <Input id="quickWardName" value={quickWardName} onChange={(e) => setQuickWardName(e.target.value)} placeholder="VD: Phường 1" />
+                <Input
+                  id="quickWardName"
+                  value={quickWardName}
+                  onChange={(e) => setQuickWardName(e.target.value)}
+                  placeholder="VD: Phường 1"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="quickWardCode">Mã</Label>
-                <Input id="quickWardCode" value={quickWardCode} onChange={(e) => setQuickWardCode(e.target.value)} placeholder="VD: W1" />
+                <Input
+                  id="quickWardCode"
+                  value={quickWardCode}
+                  onChange={(e) => {
+                    setQuickWardCodeEdited(true);
+                    setQuickWardCode(e.target.value.toUpperCase());
+                  }}
+                  placeholder="Tự tạo từ tên, VD: PHUONG_1"
+                />
               </div>
             </div>
           </div>

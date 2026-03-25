@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, Save, User, Building2, Truck } from "lucide-react";
 import { toast } from "sonner";
@@ -23,9 +23,9 @@ const roleLabels: Record<string, string> = {
 };
 
 const enterpriseApprovalStatusLabels: Record<string, string> = {
-  PendingApproval: "Ch? duy?t",
-  Approved: "?? duy?t",
-  Rejected: "T? ch?i",
+  PendingApproval: "Chờ duyệt",
+  Approved: "Đã duyệt",
+  Rejected: "Từ chối",
 };
 
 const ProfilePage = () => {
@@ -37,21 +37,19 @@ const ProfilePage = () => {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [districtId, setDistrictId] = useState<string>("none");
   const [wardId, setWardId] = useState<string>("none");
+  const [districtKeyword, setDistrictKeyword] = useState("");
+  const [wardKeyword, setWardKeyword] = useState("");
 
   const { data: districtList = [] } = useQuery({
     queryKey: ["profileDistricts"],
-    queryFn: async () => {
-      const res = await districtService.getAll({ PageNumber: 1, PageSize: 100 });
-      return res.items;
-    },
+    queryFn: () => districtService.getAllItems({ PageSize: 100 }),
   });
 
   const { data: wardList = [] } = useQuery({
     queryKey: ["profileWards", districtId],
-    queryFn: async () => {
+    queryFn: () => {
       if (!districtId || districtId === "none") return [];
-      const res = await wardService.getAll({ DistrictId: districtId, PageNumber: 1, PageSize: 100 });
-      return res.items;
+      return wardService.getAllItems({ DistrictId: districtId, PageSize: 100 });
     },
     enabled: districtId !== "none",
   });
@@ -66,6 +64,18 @@ const ProfilePage = () => {
     setDistrictId(profile.districtId ?? "none");
     setWardId(profile.wardId ?? "none");
   }, [profile]);
+
+  const filteredDistrictList = useMemo(() => {
+    const keyword = districtKeyword.trim().toLowerCase();
+    if (!keyword) return districtList;
+    return districtList.filter((district) => district.name.toLowerCase().includes(keyword));
+  }, [districtKeyword, districtList]);
+
+  const filteredWardList = useMemo(() => {
+    const keyword = wardKeyword.trim().toLowerCase();
+    if (!keyword) return wardList;
+    return wardList.filter((ward) => ward.name.toLowerCase().includes(keyword));
+  }, [wardKeyword, wardList]);
 
   const handleSave = async () => {
     try {
@@ -89,7 +99,9 @@ const ProfilePage = () => {
       <div className="mx-auto max-w-4xl space-y-6">
         <div>
           <h1 className="font-display text-2xl font-bold text-foreground">Hồ sơ</h1>
-          <p className="text-sm text-muted-foreground">Quản lý thông tin tài khoản và hồ sơ nghiệp vụ của bạn.</p>
+          <p className="text-sm text-muted-foreground">
+            Quản lý thông tin tài khoản và hồ sơ nghiệp vụ của bạn.
+          </p>
         </div>
 
         <Card className="shadow-card">
@@ -128,11 +140,17 @@ const ProfilePage = () => {
                   </div>
                   <div className="space-y-1.5">
                     <Label>Quận / Huyện</Label>
+                    <Input
+                      value={districtKeyword}
+                      onChange={(e) => setDistrictKeyword(e.target.value)}
+                      placeholder="Tìm quận / huyện..."
+                    />
                     <Select
                       value={districtId}
                       onValueChange={(value) => {
                         setDistrictId(value);
                         setWardId("none");
+                        setWardKeyword("");
                       }}
                     >
                       <SelectTrigger>
@@ -140,16 +158,25 @@ const ProfilePage = () => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Không chọn</SelectItem>
-                        {districtList.map((district) => (
+                        {filteredDistrictList.map((district) => (
                           <SelectItem key={district.id} value={district.id}>
                             {district.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {filteredDistrictList.length} quận / huyện phù hợp
+                    </p>
                   </div>
                   <div className="space-y-1.5">
                     <Label>Phường / Xã</Label>
+                    <Input
+                      value={wardKeyword}
+                      onChange={(e) => setWardKeyword(e.target.value)}
+                      placeholder="Tìm phường / xã..."
+                      disabled={districtId === "none"}
+                    />
                     <Select
                       value={wardId}
                       onValueChange={setWardId}
@@ -160,13 +187,16 @@ const ProfilePage = () => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Không chọn</SelectItem>
-                        {wardList.map((ward) => (
+                        {filteredWardList.map((ward) => (
                           <SelectItem key={ward.id} value={ward.id}>
                             {ward.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {filteredWardList.length} phường / xã phù hợp
+                    </p>
                   </div>
                 </div>
 
@@ -215,7 +245,9 @@ const ProfilePage = () => {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Trạng thái duyệt</p>
-                <p className="font-medium text-foreground">{enterpriseApprovalStatusLabels[enterpriseProfile.approvalStatus] ?? enterpriseProfile.approvalStatus}</p>
+                <p className="font-medium text-foreground">
+                  {enterpriseApprovalStatusLabels[enterpriseProfile.approvalStatus] ?? enterpriseProfile.approvalStatus}
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -240,11 +272,15 @@ const ProfilePage = () => {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Trạng thái</p>
-                <p className="font-medium text-foreground">{collectorProfile.isActive ? "Hoạt động" : "Tạm khóa"}</p>
+                <p className="font-medium text-foreground">
+                  {collectorProfile.isActive ? "Hoạt động" : "Tạm khóa"}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Hoàn thiện hồ sơ</p>
-                <p className="font-medium text-foreground">{collectorProfile.isProfileCompleted ? "Đã hoàn tất" : "Chưa hoàn tất"}</p>
+                <p className="font-medium text-foreground">
+                  {collectorProfile.isProfileCompleted ? "Đã hoàn tất" : "Chưa hoàn tất"}
+                </p>
               </div>
             </CardContent>
           </Card>
