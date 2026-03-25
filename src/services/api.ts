@@ -1,6 +1,6 @@
 import axios, { InternalAxiosRequestConfig, AxiosError } from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "https://cwcr-api-ajg9b8bae2enh3d7.southeastasia-01.azurewebsites.net/api";
 
 // Create axios instance
 const api = axios.create({
