@@ -32,6 +32,7 @@ export interface PagedComplaintResponse {
 }
 
 export interface ComplaintFilterParams {
+  complainantId?: string;
   pageNumber?: number;
   pageSize?: number;
   status?: string;
@@ -176,11 +177,12 @@ export const complaintService = {
 
   getEnterprise: async (params?: ComplaintFilterParams): Promise<PagedComplaintResponse> => {
     const normalizedParams = cleanParams({
-      pageNumber: params?.pageNumber,
-      pageSize: params?.pageSize,
-      status: params?.status,
-      type: params?.type,
-      reportId: params?.reportId,
+      ComplainantId: params?.complainantId,
+      Status: params?.status,
+      Type: params?.type,
+      ReportId: params?.reportId,
+      PageNumber: params?.pageNumber,
+      PageSize: params?.pageSize,
     });
 
     const res = await api.get<PagedComplaintResponse | BaseResponse<PagedComplaintResponse>>("/Complaint/enterprise", {

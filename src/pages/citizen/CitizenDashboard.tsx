@@ -35,6 +35,7 @@ import { useCitizenPoint, useCitizenPointLeaderboard, useCitizenPointMyRank } fr
 
 const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   PENDING: { label: "Chờ xử lý", variant: "secondary" },
+  ACCEPTED: { label: "Đã tiếp nhận", variant: "outline" },
   PROCESSING: { label: "Đã tiếp nhận", variant: "outline" },
   ONTHEWAY: { label: "\u0110ang \u0111\u1ebfn l\u1ea5y", variant: "outline" },
   COLLECTED: { label: "\u0110\u00e3 thu gom", variant: "default" },
@@ -62,6 +63,13 @@ const suggestedCategoryMap: Record<string, { category: number; label: string }> 
   Recyclable: { category: 1, label: "Tái chế" },
   Hazardous: { category: 2, label: "Nguy hại" },
   Other: { category: 3, label: "Khác" },
+};
+
+const suggestedCategoryMapByNumber: Record<number, { category: number; label: string }> = {
+  0: { category: 0, label: "Hữu cơ" },
+  1: { category: 1, label: "Tái chế" },
+  2: { category: 2, label: "Nguy hại" },
+  3: { category: 3, label: "Khác" },
 };
 
 const CitizenComplaintCard = ({
@@ -115,7 +123,11 @@ const CitizenDashboard = () => {
   const [confirmCreateOpen, setConfirmCreateOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<WasteReport | null>(null);
   const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
-  const [imageSuggestion, setImageSuggestion] = useState<{ categoryLabel?: string; wasteTypeId?: string | null } | null>(null);
+  const [imageSuggestion, setImageSuggestion] = useState<{
+    categoryLabel?: string;
+    wasteTypeId?: string | null;
+    wasteTypeName?: string | null;
+  } | null>(null);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [complaintDialogOpen, setComplaintDialogOpen] = useState(false);
@@ -174,25 +186,28 @@ const CitizenDashboard = () => {
   const wasteTypes = allWasteTypes.filter((w) => w.isActive !== false);
 
   const applyImageSuggestion = (suggestedCategory?: string | null, suggestedWasteTypeId?: string | null) => {
-    if (suggestedCategory && suggestedCategoryMap[suggestedCategory]) {
-      const suggestion = suggestedCategoryMap[suggestedCategory];
-      setSelectedCategory(suggestion.category);
-      setImageSuggestion({
-        categoryLabel: suggestion.label,
-        wasteTypeId: suggestedWasteTypeId ?? null,
-      });
-    } else {
-      setImageSuggestion(
-        suggestedWasteTypeId
-          ? {
-              wasteTypeId: suggestedWasteTypeId,
-            }
-          : null
-      );
+    const suggestedWasteType = suggestedWasteTypeId
+      ? wasteTypes.find((item) => item.id === suggestedWasteTypeId)
+      : undefined;
+    const resolvedSuggestion =
+      (suggestedCategory && suggestedCategoryMap[suggestedCategory]) ||
+      (suggestedWasteType?.category != null ? suggestedCategoryMapByNumber[suggestedWasteType.category] : undefined);
+
+    if (resolvedSuggestion) {
+      setSelectedCategory(resolvedSuggestion.category);
     }
 
+    setImageSuggestion(
+      resolvedSuggestion || suggestedWasteTypeId
+        ? {
+            categoryLabel: resolvedSuggestion?.label,
+            wasteTypeId: suggestedWasteTypeId ?? null,
+            wasteTypeName: suggestedWasteType?.name ?? null,
+          }
+        : null
+    );
+
     if (suggestedWasteTypeId) {
-      const suggestedWasteType = wasteTypes.find((item) => item.id === suggestedWasteTypeId);
       setSelectedWastes((prev) => {
         if (prev.some((item) => item.wasteTypeId === suggestedWasteTypeId)) return prev;
         if (prev.length >= 5) return prev;
@@ -697,10 +712,18 @@ const CitizenDashboard = () => {
                 <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
                   Ví dụ: ảnh chai nước suối có thể được gợi ý là nhóm <span className="font-medium text-foreground">Tái chế</span> và tự chọn sẵn loại rác phù hợp nếu hệ thống nhận diện được.
                 </div>
-                {imageSuggestion?.categoryLabel && (
+                {(imageSuggestion?.categoryLabel || imageSuggestion?.wasteTypeName) && (
                   <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
-                    Gợi ý từ ảnh: nhóm rác <span className="font-semibold">{imageSuggestion.categoryLabel}</span>
-                    {imageSuggestion.wasteTypeId ? " và đã chọn sẵn một loại rác phù hợp." : "."}
+                    {imageSuggestion.wasteTypeName ? (
+                      <>
+                        Gợi ý từ ảnh: loại rác <span className="font-semibold">{imageSuggestion.wasteTypeName}</span>
+                        {imageSuggestion.categoryLabel ? <> thuộc nhóm <span className="font-semibold">{imageSuggestion.categoryLabel}</span>.</> : "."}
+                      </>
+                    ) : (
+                      <>
+                        Gợi ý từ ảnh: nhóm rác <span className="font-semibold">{imageSuggestion.categoryLabel}</span>.
+                      </>
+                    )}
                   </div>
                 )}
                 <form onSubmit={handleCreateReport} className="space-y-4 pb-2">
@@ -1216,9 +1239,18 @@ const CitizenDashboard = () => {
           </AlertDialogHeader>
 
           <div className="space-y-3 text-sm">
-            {imageSuggestion?.categoryLabel && (
+            {(imageSuggestion?.categoryLabel || imageSuggestion?.wasteTypeName) && (
               <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-green-800">
-                AI đang gợi ý nhóm rác: <span className="font-semibold">{imageSuggestion.categoryLabel}</span>
+                {imageSuggestion.wasteTypeName ? (
+                  <>
+                    AI đang gợi ý loại rác: <span className="font-semibold">{imageSuggestion.wasteTypeName}</span>
+                    {imageSuggestion.categoryLabel ? <> thuộc nhóm <span className="font-semibold">{imageSuggestion.categoryLabel}</span></> : null}
+                  </>
+                ) : (
+                  <>
+                    AI đang gợi ý nhóm rác: <span className="font-semibold">{imageSuggestion.categoryLabel}</span>
+                  </>
+                )}
               </div>
             )}
 

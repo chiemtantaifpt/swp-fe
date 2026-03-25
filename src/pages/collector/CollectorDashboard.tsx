@@ -9,10 +9,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Truck, MapPin, Clock, CheckCircle, Package, Navigation, AlertCircle, Image as ImageIcon, Eye, ExternalLink } from "lucide-react";
+import { Truck, MapPin, Clock, CheckCircle, Package, Navigation, AlertCircle, Image as ImageIcon, Eye, ExternalLink, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { collectorAssignmentService, collectorProofService, CollectorAssignment } from "@/services/collectionRequest";
+import { collectorAssignmentService, collectorProofService, CollectorAssignment, PagedAssignmentResult } from "@/services/collectionRequest";
 import { imageService } from "@/services/image";
 
 // ─── Step helpers ────────────────────────────────────────────────────
@@ -90,6 +90,7 @@ const CollectorDashboard = () => {
   const [proofPreviewUrl, setProofPreviewUrl]           = useState<string | null>(null);
   const [proofSubmitting, setProofSubmitting]           = useState(false);
   const fileInputRef                                    = useRef<HTMLInputElement>(null);
+  const actionLocksRef                                  = useRef<Set<string>>(new Set());
   const qc                                              = useQueryClient();
 
   useEffect(() => {
@@ -118,18 +119,45 @@ const CollectorDashboard = () => {
   const setCardLoading = (id: string, v: boolean) =>
     setLoadingIds(prev => { const s = new Set(prev); v ? s.add(id) : s.delete(id); return s; });
 
+  const patchAssignmentInCache = (id: string, updates: Partial<CollectorAssignment>) => {
+    qc.setQueryData<PagedAssignmentResult | undefined>(["myAssignments"], (current) => {
+      if (!current) return current;
+
+      return {
+        ...current,
+        items: current.items.map((item) =>
+          item.id === id ? { ...item, ...updates } : item
+        ),
+      };
+    });
+  };
+
   const handleStartGo = async (a: CollectorAssignment) => {
+    if (
+      actionLocksRef.current.has(a.id) ||
+      isCompletedAssignment(a) ||
+      getStep(a) === "ON_THE_WAY"
+    ) {
+      return;
+    }
+
+    actionLocksRef.current.add(a.id);
     setCardLoading(a.id, true);
     try {
       await collectorAssignmentService.updateStatus(a.id, "OnTheWay");
+      patchAssignmentInCache(a.id, {
+        status: "OnTheWay",
+        lastUpdatedTime: new Date().toISOString(),
+      });
       setSelectedAssignment((current) =>
         current?.id === a.id ? { ...current, status: "OnTheWay" } : current
       );
-      qc.invalidateQueries({ queryKey: ["myAssignments"] });
       toast.info("Đang di chuyển đến điểm thu gom");
+      await qc.invalidateQueries({ queryKey: ["myAssignments"] });
     } catch {
       toast.error("Cập nhật trạng thái thất bại");
     } finally {
+      actionLocksRef.current.delete(a.id);
       setCardLoading(a.id, false);
     }
   };
@@ -175,6 +203,9 @@ const CollectorDashboard = () => {
     selectedAssignment && !isCompletedAssignment(selectedAssignment)
       ? getStep(selectedAssignment)
       : null;
+  const isSelectedAssignmentLoading = selectedAssignment
+    ? loadingIds.has(selectedAssignment.id)
+    : false;
   const selectedAssignmentMapsUrl = selectedAssignment
     ? getAssignmentMapsUrl(selectedAssignment)
     : null;
@@ -303,18 +334,22 @@ const CollectorDashboard = () => {
                             <Eye className="mr-1 h-4 w-4" />
                             Chi tiết
                           </Button>
-                          {step === "ASSIGNED" && (
-                            <Button size="sm" disabled={isCardLoading} onClick={() => handleStartGo(a)}>
-                              <Navigation className="mr-1 h-4 w-4" />
-                              {isCardLoading ? "Đang xử lý…" : "Bắt đầu đi"}
+                          {isCardLoading ? (
+                            <Button size="sm" disabled>
+                              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                              Đang cập nhật...
                             </Button>
-                          )}
-                          {step === "ON_THE_WAY" && (
+                          ) : step === "ASSIGNED" ? (
+                            <Button size="sm" onClick={() => handleStartGo(a)}>
+                              <Navigation className="mr-1 h-4 w-4" />
+                              Bắt đầu đi
+                            </Button>
+                          ) : step === "ON_THE_WAY" ? (
                             <Button size="sm" onClick={() => handleOpenComplete(a)}>
                               <CheckCircle className="mr-1 h-4 w-4" />
                               Hoàn tất thu gom
                             </Button>
-                          )}
+                          ) : null}
                         </div>
                       </div>
                     </CardContent>
@@ -480,21 +515,24 @@ const CollectorDashboard = () => {
                     </a>
                   </Button>
                 )}
-                {!isCompletedAssignment(selectedAssignment) && selectedAssignmentStep === "ASSIGNED" && (
-                  <Button
-                    disabled={loadingIds.has(selectedAssignment.id)}
-                    onClick={() => handleStartGo(selectedAssignment)}
-                  >
-                    <Navigation className="mr-1 h-4 w-4" />
-                    {loadingIds.has(selectedAssignment.id) ? "Đang xử lý…" : "Bắt đầu đi"}
+                {!isCompletedAssignment(selectedAssignment) && isSelectedAssignmentLoading ? (
+                  <Button disabled>
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                    Đang cập nhật...
                   </Button>
-                )}
-                {!isCompletedAssignment(selectedAssignment) && selectedAssignmentStep === "ON_THE_WAY" && (
+                ) : !isCompletedAssignment(selectedAssignment) &&
+                  selectedAssignmentStep === "ASSIGNED" ? (
+                  <Button onClick={() => handleStartGo(selectedAssignment)}>
+                    <Navigation className="mr-1 h-4 w-4" />
+                    Bắt đầu đi
+                  </Button>
+                ) : !isCompletedAssignment(selectedAssignment) &&
+                  selectedAssignmentStep === "ON_THE_WAY" ? (
                   <Button onClick={() => handleOpenComplete(selectedAssignment)}>
                     <CheckCircle className="mr-1 h-4 w-4" />
                     Hoàn tất thu gom
                   </Button>
-                )}
+                ) : null}
               </div>
             </DialogFooter>
           </DialogContent>

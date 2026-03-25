@@ -26,7 +26,7 @@ import { serviceAreaService, wasteCapabilityService, recyclingEnterpriseService,
 import { wasteTypeService } from "@/services/wasteType";
 import { collectionRequestService, collectorAssignmentService, CollectionRequest, collectorService, Collector, collectorProofService, CollectorProof } from "@/services/collectionRequest";
 import type { Complaint, ComplaintStatus } from "@/services/complaint";
-import { useCreateDisputeResolution, useDisputeResolutionsByComplaint, useEnterpriseComplaintDetail, useEnterpriseComplaints } from "@/hooks/useEnterpriseComplaints";
+import { useCreateDisputeResolution, useEnterpriseComplaints } from "@/hooks/useEnterpriseComplaints";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -190,7 +190,7 @@ const EnterpriseDashboard = () => {
   const [selectedProof, setSelectedProof] = useState<CollectorProof | null>(null);
   const [reviewNote, setReviewNote] = useState("");
   const [complaintStatusFilter, setComplaintStatusFilter] = useState<"all" | ComplaintStatus>("all");
-  const [selectedComplaintId, setSelectedComplaintId] = useState<string | null>(null);
+  const [respondingComplaint, setRespondingComplaint] = useState<Complaint | null>(null);
   const [disputeResponseNote, setDisputeResponseNote] = useState("");
 
   // ── collection request queries ──
@@ -247,14 +247,6 @@ const EnterpriseDashboard = () => {
     data: enterpriseComplaintsData,
     isLoading: enterpriseComplaintsLoading,
   } = useEnterpriseComplaints(complaintParams, isApproved);
-  const {
-    data: selectedComplaint,
-    isLoading: selectedComplaintLoading,
-  } = useEnterpriseComplaintDetail(selectedComplaintId);
-  const {
-    data: selectedComplaintResolutions = [],
-    isLoading: selectedComplaintResolutionsLoading,
-  } = useDisputeResolutionsByComplaint(selectedComplaintId);
 
   const createDisputeResolution = useCreateDisputeResolution();
   const complaintList = enterpriseComplaintsData?.items ?? [];
@@ -497,8 +489,8 @@ const EnterpriseDashboard = () => {
 
   const submitComplaintResponse = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedComplaintId || !selectedComplaint) return;
-    if (selectedComplaint.status !== "InReview") {
+    if (!respondingComplaint) return;
+    if (respondingComplaint.status !== "InReview") {
       toast.error("Chỉ có thể phản hồi khi khiếu nại đang ở trạng thái Đang xem xét");
       return;
     }
@@ -509,10 +501,11 @@ const EnterpriseDashboard = () => {
 
     try {
       await createDisputeResolution.mutateAsync({
-        complaintId: selectedComplaintId,
+        complaintId: respondingComplaint.id,
         responseNote: disputeResponseNote.trim(),
       });
       toast.success("Đã gửi phản hồi khiếu nại");
+      setRespondingComplaint(null);
       setDisputeResponseNote("");
     } catch (error) {
       const message =
@@ -777,11 +770,7 @@ const EnterpriseDashboard = () => {
                     return (
                       <Card
                         key={complaint.id}
-                        className="cursor-pointer border-border/70 shadow-sm transition-shadow hover:shadow-card"
-                        onClick={() => {
-                          setSelectedComplaintId(complaint.id);
-                          setDisputeResponseNote("");
-                        }}
+                        className="border-border/70 shadow-sm transition-shadow hover:shadow-card"
                       >
                         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
                           <div className="min-w-0 flex-1 space-y-2">
@@ -795,18 +784,27 @@ const EnterpriseDashboard = () => {
                             </div>
                             <p className="line-clamp-2 text-sm font-medium text-foreground">{complaint.content}</p>
                             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                              <span>Report: {complaint.reportId}</span>
-                              <span>Yêu cầu: {complaint.collectionRequestId ?? "Không có"}</span>
                               <span>Tạo lúc: {complaint.createdTime ? new Date(complaint.createdTime).toLocaleString("vi-VN") : "—"}</span>
+                              {complaint.resolutions.length > 0 && <span>{complaint.resolutions.length} phản hồi</span>}
                             </div>
                           </div>
                           <div className="flex shrink-0 items-center gap-2">
                             {complaint.status === "InReview" && (
-                              <Badge className="bg-blue-50 text-blue-700 hover:bg-blue-50">Phản hồi được</Badge>
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  setRespondingComplaint(complaint);
+                                  setDisputeResponseNote("");
+                                }}
+                              >
+                                Phản hồi
+                              </Button>
                             )}
-                            <Button size="sm" variant="outline">
-                              <Eye className="mr-1 h-4 w-4" /> Chi tiết
-                            </Button>
+                            {complaint.status !== "InReview" && (
+                              <Badge variant="outline" className="text-xs">
+                                {complaint.status === "EnterpriseResponded" ? "Đã phản hồi" : "Không cần phản hồi"}
+                              </Badge>
+                            )}
                           </div>
                         </CardContent>
                       </Card>
@@ -1554,87 +1552,64 @@ const EnterpriseDashboard = () => {
       </Dialog>
       {/* ══ Dialog: Proof Detail / Review ══ */}
       <Dialog
-        open={!!selectedComplaintId}
+        open={!!respondingComplaint}
         onOpenChange={(open) => {
           if (!open) {
-            setSelectedComplaintId(null);
+            setRespondingComplaint(null);
             setDisputeResponseNote("");
           }
         }}
       >
-        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-amber-600" />
-              Chi tiết khiếu nại
-            </DialogTitle>
-          </DialogHeader>
+        {respondingComplaint && (
+          <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-amber-600" />
+                Phản hồi khiếu nại
+              </DialogTitle>
+            </DialogHeader>
 
-          {selectedComplaintLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-5 w-1/3" />
-              <Skeleton className="h-20 w-full" />
-              <Skeleton className="h-24 w-full" />
-            </div>
-          ) : !selectedComplaint ? (
-            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-              Không tải được chi tiết khiếu nại.
-            </div>
-          ) : (
             <div className="space-y-5">
               <div className="space-y-3 rounded-lg border p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="secondary">
-                    {COMPLAINT_TYPE_LABEL[selectedComplaint.type] ?? selectedComplaint.type}
+                    {COMPLAINT_TYPE_LABEL[respondingComplaint.type] ?? respondingComplaint.type}
                   </Badge>
                   <Badge
-                    variant={COMPLAINT_STATUS_META[selectedComplaint.status as ComplaintStatus]?.variant ?? "default"}
-                    className={COMPLAINT_STATUS_META[selectedComplaint.status as ComplaintStatus]?.badgeClass ?? ""}
+                    variant={COMPLAINT_STATUS_META[respondingComplaint.status as ComplaintStatus]?.variant ?? "default"}
+                    className={COMPLAINT_STATUS_META[respondingComplaint.status as ComplaintStatus]?.badgeClass ?? ""}
                   >
-                    {COMPLAINT_STATUS_META[selectedComplaint.status as ComplaintStatus]?.label ?? selectedComplaint.status}
+                    {COMPLAINT_STATUS_META[respondingComplaint.status as ComplaintStatus]?.label ?? respondingComplaint.status}
                   </Badge>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-foreground">Nội dung khiếu nại</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{selectedComplaint.content}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{respondingComplaint.content}</p>
                 </div>
-                <div className="grid gap-3 text-sm sm:grid-cols-2">
-                  <div>
-                    <p className="text-muted-foreground">Report ID</p>
-                    <p className="font-medium break-all">{selectedComplaint.reportId}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Collection request ID</p>
-                    <p className="font-medium break-all">{selectedComplaint.collectionRequestId ?? "Không có"}</p>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <p className="text-muted-foreground">Thời gian tạo</p>
-                    <p className="font-medium">
-                      {selectedComplaint.createdTime ? new Date(selectedComplaint.createdTime).toLocaleString("vi-VN") : "—"}
-                    </p>
-                  </div>
+                <div className="text-sm">
+                  <p className="text-muted-foreground">Thời gian tạo</p>
+                  <p className="font-medium">
+                    {respondingComplaint.createdTime ? new Date(respondingComplaint.createdTime).toLocaleString("vi-VN") : "—"}
+                  </p>
                 </div>
               </div>
 
               <div className="space-y-3 rounded-lg border p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <h3 className="font-medium text-foreground">Lịch sử phản hồi</h3>
-                  <Badge variant="outline">{selectedComplaintResolutions.length} phản hồi</Badge>
+                  <Badge variant="outline">{respondingComplaint.resolutions.length} phản hồi</Badge>
                 </div>
-                {selectedComplaintResolutionsLoading ? (
-                  <div className="space-y-2">
-                    <Skeleton className="h-16 w-full" />
-                    <Skeleton className="h-16 w-full" />
-                  </div>
-                ) : selectedComplaintResolutions.length === 0 ? (
+                {respondingComplaint.resolutions.length === 0 ? (
                   <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
                     Chưa có phản hồi dispute nào cho khiếu nại này.
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {selectedComplaintResolutions.map((resolution) => (
+                    {respondingComplaint.resolutions.map((resolution) => (
                       <div key={resolution.id} className="rounded-md border bg-muted/20 p-3">
-                        <p className="text-sm font-medium text-foreground">{resolution.responseNote || resolution.resolutionNote || "Không có nội dung"}</p>
+                        <p className="text-sm font-medium text-foreground">
+                          {resolution.responseNote || resolution.resolutionNote || "Không có nội dung"}
+                        </p>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {resolution.createdTime ? new Date(resolution.createdTime).toLocaleString("vi-VN") : "—"}
                         </p>
@@ -1644,7 +1619,7 @@ const EnterpriseDashboard = () => {
                 )}
               </div>
 
-              {selectedComplaint.status === "InReview" ? (
+              {respondingComplaint.status === "InReview" ? (
                 <form onSubmit={submitComplaintResponse} className="space-y-3 rounded-lg border p-4">
                   <div>
                     <Label htmlFor="enterpriseDisputeResponse">Phản hồi của doanh nghiệp</Label>
@@ -1652,14 +1627,14 @@ const EnterpriseDashboard = () => {
                       id="enterpriseDisputeResponse"
                       rows={4}
                       className="mt-2"
-                      placeholder="Nhập nội dung phản hồi cho complaint này..."
+                      placeholder="Nhập nội dung phản hồi cho khiếu nại này..."
                       value={disputeResponseNote}
                       onChange={(e) => setDisputeResponseNote(e.target.value)}
                       disabled={createDisputeResolution.isPending}
                     />
                   </div>
                   <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => { setSelectedComplaintId(null); setDisputeResponseNote(""); }}>
+                    <Button type="button" variant="outline" onClick={() => { setRespondingComplaint(null); setDisputeResponseNote(""); }}>
                       {"H\u1ee7y"}
                     </Button>
                     <Button type="submit" disabled={createDisputeResolution.isPending || !disputeResponseNote.trim()}>
@@ -1673,8 +1648,8 @@ const EnterpriseDashboard = () => {
                 </div>
               )}
             </div>
-          )}
-        </DialogContent>
+          </DialogContent>
+        )}
       </Dialog>
 
       <Dialog open={!!selectedProof} onOpenChange={(o) => { if (!o) { setSelectedProof(null); setReviewNote(""); } }}>

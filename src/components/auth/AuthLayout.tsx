@@ -15,7 +15,7 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
         </div>
       </div>
 
-      <div className="relative flex-1 overflow-y-auto bg-background md:bg-muted/30">
+      <div className="relative flex-1 overflow-y-auto bg-background md:overflow-hidden md:bg-muted/30">
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 hidden md:block"
@@ -34,8 +34,8 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
           </Link>
         </div>
 
-        <div className="relative flex min-h-[calc(100vh-69px)] items-center justify-center px-4 py-8 md:min-h-screen md:px-8">
-          <div className="w-full max-w-md md:max-w-lg">{children}</div>
+        <div className="relative flex min-h-[calc(100vh-69px)] items-center justify-center px-4 py-6 md:min-h-screen md:px-6 md:py-4 lg:px-8 lg:py-5">
+          <div className="w-full max-w-md md:max-w-[31rem]">{children}</div>
         </div>
       </div>
     </div>

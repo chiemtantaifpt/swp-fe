@@ -215,6 +215,7 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
   const currentStepKey = (() => {
     if (normalizedStatus === "COMPLETED") return "COMPLETED";
     if (normalizedStatus === "VERIFIED") return "COMPLETED";
+    if (normalizedStatus === "ACCEPTED") return "PROCESSING";
     if (normalizedStatus === "ASSIGNED" && proof) return "COLLECTED";
     return normalizedStatus; // PENDING | PROCESSING | ASSIGNED
   })();

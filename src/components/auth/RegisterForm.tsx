@@ -125,7 +125,7 @@ export default function RegisterForm() {
   };
 
   return (
-    <Card className="relative overflow-hidden border border-white/35 bg-white/30 shadow-[0_20px_60px_-18px_rgba(31,61,49,0.35)] backdrop-blur-2xl supports-[backdrop-filter]:bg-white/24">
+    <Card className="relative mx-auto w-full max-w-[29rem] overflow-hidden border border-white/35 bg-white/30 shadow-[0_20px_60px_-18px_rgba(31,61,49,0.35)] backdrop-blur-2xl supports-[backdrop-filter]:bg-white/24">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
@@ -135,18 +135,18 @@ export default function RegisterForm() {
         }}
       />
 
-      <CardHeader className="relative pb-4">
-        <CardTitle className="font-display text-2xl font-bold text-foreground">
+      <CardHeader className="relative px-4 pb-2.5 pt-4 md:px-5">
+        <CardTitle className="font-display text-[1.8rem] font-bold text-foreground">
           Tạo tài khoản
         </CardTitle>
-        <CardDescription className="text-sm text-muted-foreground">
+        <CardDescription className="text-[0.95rem] text-muted-foreground">
           Đăng ký để bắt đầu sử dụng nền tảng EcoCollect
         </CardDescription>
       </CardHeader>
 
-      <CardContent className="relative">
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <CardContent className="relative px-4 pb-4 pt-0 md:px-5 md:pb-4">
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="reg-name">Họ tên</Label>
               <Input
@@ -158,7 +158,7 @@ export default function RegisterForm() {
                   clearError("name");
                 }}
                 disabled={loading}
-                className={`border-white/45 bg-white/45 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                className={`h-10 border-white/45 bg-white/45 text-sm transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 md:h-9 ${
                   errors.name ? "border-destructive focus-visible:ring-destructive/50" : ""
                 }`}
                 autoComplete="name"
@@ -178,7 +178,7 @@ export default function RegisterForm() {
                   clearError("phone");
                 }}
                 disabled={loading}
-                className={`border-white/45 bg-white/45 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                className={`h-10 border-white/45 bg-white/45 text-sm transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 md:h-9 ${
                   errors.phone ? "border-destructive focus-visible:ring-destructive/50" : ""
                 }`}
                 autoComplete="tel"
@@ -199,7 +199,7 @@ export default function RegisterForm() {
                 clearError("email");
               }}
               disabled={loading}
-              className={`border-white/45 bg-white/45 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 ${
+              className={`h-10 border-white/45 bg-white/45 text-sm transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 md:h-9 ${
                 errors.email ? "border-destructive focus-visible:ring-destructive/50" : ""
               }`}
               autoComplete="email"
@@ -220,7 +220,7 @@ export default function RegisterForm() {
                   clearError("password");
                 }}
                 disabled={loading}
-                className={`border-white/45 bg-white/45 pr-10 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                className={`h-10 border-white/45 bg-white/45 pr-10 text-sm transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 md:h-9 ${
                   errors.password ? "border-destructive focus-visible:ring-destructive/50" : ""
                 }`}
                 autoComplete="new-password"
@@ -252,7 +252,7 @@ export default function RegisterForm() {
                   clearError("confirmPassword");
                 }}
                 disabled={loading}
-                className={`border-white/45 bg-white/45 pr-10 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                className={`h-10 border-white/45 bg-white/45 pr-10 text-sm transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 md:h-9 ${
                   errors.confirmPassword ? "border-destructive focus-visible:ring-destructive/50" : ""
                 }`}
                 autoComplete="new-password"
@@ -290,7 +290,7 @@ export default function RegisterForm() {
               }}
               disabled={loading}
             >
-              <SelectTrigger className="border-white/45 bg-white/45 focus:ring-2 focus:ring-primary/40">
+              <SelectTrigger className="h-10 border-white/45 bg-white/45 text-sm focus:ring-2 focus:ring-primary/40 md:h-9">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -301,7 +301,7 @@ export default function RegisterForm() {
           </div>
 
           {isCitizen && (
-            <div className="space-y-3 rounded-2xl border border-white/35 bg-white/20 p-4">
+            <div className="space-y-2 rounded-2xl border border-white/35 bg-white/20 p-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-medium text-foreground">Hoàn thiện hồ sơ ngay</p>
@@ -329,14 +329,14 @@ export default function RegisterForm() {
               </div>
 
               {showLocationFields && (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label>Quận / Huyện</Label>
                     <Input
                       value={districtKeyword}
                       onChange={(e) => setDistrictKeyword(e.target.value)}
                       disabled={loading}
-                      className="border-white/45 bg-white/45 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40"
+                      className="h-10 border-white/45 bg-white/45 text-sm transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 md:h-9"
                       placeholder="Tìm quận / huyện..."
                     />
                     <Select
@@ -348,7 +348,7 @@ export default function RegisterForm() {
                       }}
                       disabled={loading}
                     >
-                      <SelectTrigger className="border-white/45 bg-white/45 focus:ring-2 focus:ring-primary/40">
+                      <SelectTrigger className="h-10 border-white/45 bg-white/45 text-sm focus:ring-2 focus:ring-primary/40 md:h-9">
                         <SelectValue placeholder="Chọn quận/huyện" />
                       </SelectTrigger>
                       <SelectContent>
@@ -370,7 +370,7 @@ export default function RegisterForm() {
                       value={wardKeyword}
                       onChange={(e) => setWardKeyword(e.target.value)}
                       disabled={loading || !districtId}
-                      className="border-white/45 bg-white/45 transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40"
+                      className="h-10 border-white/45 bg-white/45 text-sm transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 md:h-9"
                       placeholder="Tìm phường / xã..."
                     />
                     <Select
@@ -378,7 +378,7 @@ export default function RegisterForm() {
                       onValueChange={setWardId}
                       disabled={loading || !districtId}
                     >
-                      <SelectTrigger className="border-white/45 bg-white/45 focus:ring-2 focus:ring-primary/40">
+                      <SelectTrigger className="h-10 border-white/45 bg-white/45 text-sm focus:ring-2 focus:ring-primary/40 md:h-9">
                         <SelectValue placeholder={districtId ? "Chọn phường/xã" : "Chọn quận/huyện trước"} />
                       </SelectTrigger>
                       <SelectContent>
@@ -401,7 +401,7 @@ export default function RegisterForm() {
           <Button
             type="button"
             onClick={handleSubmit}
-            className="mt-2 w-full border border-primary/20 bg-primary text-primary-foreground shadow-[0_16px_30px_-12px_rgba(65,133,148,0.55)] transition-all duration-150 hover:-translate-y-0.5 hover:bg-primary/92 hover:shadow-[0_22px_36px_-14px_rgba(65,133,148,0.65)] active:scale-[0.98]"
+            className="mt-1.5 h-10 w-full border border-primary/20 bg-primary text-primary-foreground shadow-[0_16px_30px_-12px_rgba(65,133,148,0.55)] transition-all duration-150 hover:-translate-y-0.5 hover:bg-primary/92 hover:shadow-[0_22px_36px_-14px_rgba(65,133,148,0.65)] active:scale-[0.98] md:h-9"
             disabled={loading}
           >
             {loading ? (
@@ -418,9 +418,9 @@ export default function RegisterForm() {
           </Button>
         </div>
 
-        <Separator className="my-5 bg-white/35" />
+        <Separator className="my-2.5 bg-white/35" />
 
-        <p className="text-center text-sm text-muted-foreground">
+        <p className="text-center text-xs text-muted-foreground md:text-sm">
           Đã có tài khoản?{" "}
           <Link
             to="/login"
