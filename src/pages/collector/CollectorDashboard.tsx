@@ -8,7 +8,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Truck, MapPin, Clock, CheckCircle, Package, Navigation, AlertCircle, Image as ImageIcon } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { Truck, MapPin, Clock, CheckCircle, Package, Navigation, AlertCircle, Image as ImageIcon, Eye, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { collectorAssignmentService, collectorProofService, CollectorAssignment } from "@/services/collectionRequest";
@@ -38,9 +39,51 @@ const getStep = (a: CollectorAssignment): Step => {
 const getAssignmentDisplayName = (assignment: CollectorAssignment) =>
   assignment.wasteTypeName?.trim() || "Yêu cầu thu gom";
 
+const normalizeStatus = (value?: string | null) => (value ?? "").trim().toUpperCase();
+
+const isCompletedAssignment = (assignment: CollectorAssignment) => {
+  const assignmentStatus = normalizeStatus(assignment.status);
+  const requestStatus = normalizeStatus(assignment.requestStatus);
+
+  return (
+    assignmentStatus === "COLLECTED" ||
+    requestStatus === "COMPLETED" ||
+    requestStatus === "VERIFIED"
+  );
+};
+
+const REQUEST_STATUS_LABELS: Record<string, string> = {
+  ASSIGNED: "Đang thu gom",
+  ONTHEWAY: "Đang di chuyển",
+  COLLECTED: "Đã thu gom",
+  VERIFIED: "Đã xác nhận",
+  COMPLETED: "Hoàn thành",
+};
+
+const getRequestStatusLabel = (status?: string | null) =>
+  REQUEST_STATUS_LABELS[normalizeStatus(status)] ?? status ?? "—";
+
+const getAssignmentLocationText = (assignment: CollectorAssignment) => {
+  const parts = [
+    assignment.address,
+    assignment.latitude != null && assignment.longitude != null
+      ? `${assignment.latitude.toFixed(5)}, ${assignment.longitude.toFixed(5)}`
+      : null,
+    assignment.regionCode,
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(" • ") : "—";
+};
+
+const getAssignmentMapsUrl = (assignment: CollectorAssignment) =>
+  assignment.latitude != null && assignment.longitude != null
+    ? `https://www.google.com/maps?q=${assignment.latitude},${assignment.longitude}`
+    : null;
+
 const CollectorDashboard = () => {
   const [online, setOnline]                             = useState(true);
   const [loadingIds, setLoadingIds]                     = useState<Set<string>>(new Set());
+  const [selectedAssignment, setSelectedAssignment]     = useState<CollectorAssignment | null>(null);
   const [completingAssignment, setCompletingAssignment] = useState<CollectorAssignment | null>(null);
   const [proofNote, setProofNote]                       = useState("");
   const [proofFile, setProofFile]                       = useState<File | null>(null);
@@ -68,8 +111,8 @@ const CollectorDashboard = () => {
   });
 
   const allAssignments: CollectorAssignment[] = assignmentData?.items ?? [];
-  const activeTasks  = allAssignments.filter(a => a.status !== "Collected");
-  const historyTasks = allAssignments.filter(a => a.status === "Collected");
+  const activeTasks  = allAssignments.filter((assignment) => !isCompletedAssignment(assignment));
+  const historyTasks = allAssignments.filter(isCompletedAssignment);
   const totalCount   = assignmentData?.totalCount ?? 0;
 
   const setCardLoading = (id: string, v: boolean) =>
@@ -79,6 +122,9 @@ const CollectorDashboard = () => {
     setCardLoading(a.id, true);
     try {
       await collectorAssignmentService.updateStatus(a.id, "OnTheWay");
+      setSelectedAssignment((current) =>
+        current?.id === a.id ? { ...current, status: "OnTheWay" } : current
+      );
       qc.invalidateQueries({ queryKey: ["myAssignments"] });
       toast.info("Đang di chuyển đến điểm thu gom");
     } catch {
@@ -89,6 +135,7 @@ const CollectorDashboard = () => {
   };
 
   const handleOpenComplete = (a: CollectorAssignment) => {
+    setSelectedAssignment(null);
     setCompletingAssignment(a);
     setProofNote("");
     setProofFile(null);
@@ -123,6 +170,14 @@ const CollectorDashboard = () => {
       setProofSubmitting(false);
     }
   };
+
+  const selectedAssignmentStep =
+    selectedAssignment && !isCompletedAssignment(selectedAssignment)
+      ? getStep(selectedAssignment)
+      : null;
+  const selectedAssignmentMapsUrl = selectedAssignment
+    ? getAssignmentMapsUrl(selectedAssignment)
+    : null;
 
   return (
     <DashboardLayout>
@@ -215,11 +270,10 @@ const CollectorDashboard = () => {
                             )}
                           </div>
                           <div className="mt-1 space-y-0.5">
-                            {(a.latitude != null && a.longitude != null) && (
+                            {(a.address || a.latitude != null || a.regionCode) && (
                               <p className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <MapPin className="h-3 w-3" />
-                                {a.latitude.toFixed(5)}, {a.longitude.toFixed(5)}
-                                {a.regionCode ? ` • ${a.regionCode}` : ""}
+                                {getAssignmentLocationText(a)}
                               </p>
                             )}
                             <p className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -244,7 +298,11 @@ const CollectorDashboard = () => {
                             </div>
                           )}
                         </div>
-                        <div className="shrink-0">
+                        <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+                          <Button size="sm" variant="outline" onClick={() => setSelectedAssignment(a)}>
+                            <Eye className="mr-1 h-4 w-4" />
+                            Chi tiết
+                          </Button>
                           {step === "ASSIGNED" && (
                             <Button size="sm" disabled={isCardLoading} onClick={() => handleStartGo(a)}>
                               <Navigation className="mr-1 h-4 w-4" />
@@ -294,9 +352,10 @@ const CollectorDashboard = () => {
                             <Badge variant="secondary" className="text-xs">{a.wasteTypeName}</Badge>
                           )}
                         </div>
-                        {a.regionCode && (
+                        {(a.address || a.latitude != null || a.regionCode) && (
                           <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <MapPin className="h-3 w-3" />{a.regionCode}
+                            <MapPin className="h-3 w-3" />
+                            {getAssignmentLocationText(a)}
                           </p>
                         )}
                         <p className="text-xs text-muted-foreground">
@@ -308,7 +367,13 @@ const CollectorDashboard = () => {
                           <p className="text-xs text-muted-foreground">Ghi chú: {a.collectedNote}</p>
                         )}
                       </div>
-                      <Badge variant="default">Hoàn thành</Badge>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Badge variant="default">Hoàn thành</Badge>
+                        <Button size="sm" variant="outline" onClick={() => setSelectedAssignment(a)}>
+                          <Eye className="mr-1 h-4 w-4" />
+                          Chi tiết
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -317,6 +382,125 @@ const CollectorDashboard = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={!!selectedAssignment} onOpenChange={(open) => { if (!open) setSelectedAssignment(null); }}>
+        {selectedAssignment && (
+          <DialogContent className="w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex flex-wrap items-center gap-2">
+                Chi tiết đơn thu gom
+                {isCompletedAssignment(selectedAssignment) ? (
+                  <Badge variant="default">Hoàn thành</Badge>
+                ) : selectedAssignmentStep ? (
+                  <Badge variant={STEP_BADGE_VARIANT[selectedAssignmentStep]}>
+                    {STEP_LABEL[selectedAssignmentStep]}
+                  </Badge>
+                ) : null}
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4 text-sm">
+              <div className="space-y-2 rounded-lg border p-3">
+                {[
+                  { label: "Loại rác", value: getAssignmentDisplayName(selectedAssignment) },
+                  { label: "Trạng thái đơn", value: getRequestStatusLabel(selectedAssignment.requestStatus) },
+                  { label: "Địa chỉ", value: selectedAssignment.address ?? "—" },
+                  {
+                    label: "Tọa độ GPS",
+                    value:
+                      selectedAssignment.latitude != null && selectedAssignment.longitude != null
+                        ? `${selectedAssignment.latitude.toFixed(6)}, ${selectedAssignment.longitude.toFixed(6)}`
+                        : "—",
+                  },
+                  { label: "Mã khu vực", value: selectedAssignment.regionCode ?? "—" },
+                  { label: "Ngày tạo", value: new Date(selectedAssignment.createdTime).toLocaleString("vi-VN") },
+                  { label: "Cập nhật gần nhất", value: new Date(selectedAssignment.lastUpdatedTime).toLocaleString("vi-VN") },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
+                    <span className="text-muted-foreground">{label}</span>
+                    <span className="max-w-[65%] break-all text-right font-medium text-foreground">{value}</span>
+                  </div>
+                ))}
+                {selectedAssignment.collectedAt && (
+                  <div className="flex flex-col gap-1 border-t pt-2 sm:flex-row sm:justify-between sm:gap-4">
+                    <span className="text-muted-foreground">Thời gian thu gom</span>
+                    <span className="max-w-[65%] text-right font-medium text-foreground">
+                      {new Date(selectedAssignment.collectedAt).toLocaleString("vi-VN")}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {(selectedAssignment.note || selectedAssignment.collectedNote) && (
+                <div className="space-y-3 rounded-lg border p-3">
+                  {selectedAssignment.note && (
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ghi chú đơn</p>
+                      <p className="mt-1 text-foreground">{selectedAssignment.note}</p>
+                    </div>
+                  )}
+                  {selectedAssignment.note && selectedAssignment.collectedNote && <Separator />}
+                  {selectedAssignment.collectedNote && (
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ghi chú thu gom</p>
+                      <p className="mt-1 text-foreground">{selectedAssignment.collectedNote}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {(selectedAssignment.imageUrls ?? []).length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Ảnh từ báo cáo</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {(selectedAssignment.imageUrls ?? []).map((url, index) => (
+                      <a key={index} href={url} target="_blank" rel="noreferrer">
+                        <img
+                          src={url}
+                          alt={`Ảnh đơn ${index + 1}`}
+                          className="h-36 w-full rounded-lg border object-cover transition-opacity hover:opacity-85"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+              <Button variant="outline" onClick={() => setSelectedAssignment(null)}>
+                Đóng
+              </Button>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                {selectedAssignmentMapsUrl && (
+                  <Button asChild variant="outline">
+                    <a href={selectedAssignmentMapsUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="mr-1 h-4 w-4" />
+                      Mở Google Maps
+                    </a>
+                  </Button>
+                )}
+                {!isCompletedAssignment(selectedAssignment) && selectedAssignmentStep === "ASSIGNED" && (
+                  <Button
+                    disabled={loadingIds.has(selectedAssignment.id)}
+                    onClick={() => handleStartGo(selectedAssignment)}
+                  >
+                    <Navigation className="mr-1 h-4 w-4" />
+                    {loadingIds.has(selectedAssignment.id) ? "Đang xử lý…" : "Bắt đầu đi"}
+                  </Button>
+                )}
+                {!isCompletedAssignment(selectedAssignment) && selectedAssignmentStep === "ON_THE_WAY" && (
+                  <Button onClick={() => handleOpenComplete(selectedAssignment)}>
+                    <CheckCircle className="mr-1 h-4 w-4" />
+                    Hoàn tất thu gom
+                  </Button>
+                )}
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
+
       {/* ══ Modal: Hoàn tất & Upload Proof ══ */}
       <Dialog
         open={!!completingAssignment}

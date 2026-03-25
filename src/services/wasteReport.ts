@@ -42,6 +42,7 @@ export interface WasteItem {
 
 export interface CreateWasteReportRequest {
   description?: string;
+  address?: string;
   latitude?: number;
   longitude?: number;
   wastes: WasteItem[];
@@ -96,7 +97,7 @@ export const wasteReportService = {
   // Edit (update) sẽ gửi lại report và BE tự động xử lý redispatch, nên không cần gọi redispatch riêng khi đã edit
   updateNoEnterpriseAvailable: async (
     id: string,
-    data: Pick<WasteReport, "description" | "latitude" | "longitude" | "wastes">,
+    data: Pick<WasteReport, "description" | "address" | "latitude" | "longitude" | "wastes">,
   ): Promise<WasteReport> => {
     const response = await api.put<WasteReport>(`/WasteReport/${id}`, data);
     return response.data;

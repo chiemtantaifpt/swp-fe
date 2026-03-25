@@ -13,6 +13,7 @@ export interface CollectionRequest {
   wasteTypeId: string;
   wasteTypeName?: string;
   note?: string;
+  address?: string;
   imageUrls?: string[];
   latitude?: number;
   longitude?: number;
@@ -98,6 +99,7 @@ export interface CollectorAssignment {
   wasteTypeId: string;
   wasteTypeName: string | null;
   note: string | null;
+  address: string | null;
   imageUrls: string[] | null;
   wasteReportId: string;
   latitude: number | null;

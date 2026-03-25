@@ -47,6 +47,12 @@ const STEP_INDEX: Record<string, number> = {
   COMPLETED: 4,
 };
 
+const PROOF_STATUS_BADGE: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+  PENDING: { label: "Chờ duyệt proof", variant: "secondary" },
+  APPROVED: { label: "Proof đã duyệt", variant: "default" },
+  REJECTED: { label: "Proof bị từ chối", variant: "destructive" },
+};
+
 function formatDate(raw: string | undefined): string {
   if (!raw) return "—";
   // Handle .NET ticks (long number) or ISO string
@@ -213,6 +219,12 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
     return normalizedStatus; // PENDING | PROCESSING | ASSIGNED
   })();
   const currentStepIndex = STEP_INDEX[currentStepKey] ?? 0;
+  const proofBadge = proof
+    ? PROOF_STATUS_BADGE[proof.reviewStatus?.toUpperCase?.() ?? ""] ?? {
+        label: proof.reviewStatus,
+        variant: "secondary" as const,
+      }
+    : null;
 
   const getGPS = () => {
     if (!navigator.geolocation) {
@@ -280,6 +292,7 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
 
     onUpdateNoEnterprise(report.id, {
       description: editForm.description || undefined,
+      address: editForm.address.trim() || undefined,
       latitude: editForm.latitude,
       longitude: editForm.longitude,
       wastes,
@@ -393,7 +406,7 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
                   {report.wastes.map((waste, index) => (
                     <li key={index} className="font-medium">
                       {waste.wasteTypeName || waste.wasteTypeId || "—"}
-                      {waste.quantity && <span className="text-sm text-muted-foreground"> ({waste.quantity}kg)</span>}
+                      {waste.quantity && <span className="text-sm text-muted-foreground"> ({waste.quantity} kg)</span>}
                       {waste.note && <span className="text-sm text-muted-foreground"> - {waste.note}</span>}
                     </li>
                   ))}
@@ -444,6 +457,74 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
                 <p className="text-xs text-muted-foreground">Người thu gom</p>
                 <p className="font-medium">{report.collectorName}</p>
               </div>
+            </div>
+          )}
+
+          {(proofLoading || proof) && (
+            <div className="rounded-lg border border-border bg-muted/30 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex items-start gap-2">
+                  <Camera className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Xác nhận thu gom</p>
+                    <p className="font-medium text-foreground">
+                      {proofLoading
+                        ? "Đang tải ảnh xác nhận từ collector..."
+                        : "Collector đã gửi ảnh xác nhận thu gom."}
+                    </p>
+                  </div>
+                </div>
+                {proofBadge && <Badge variant={proofBadge.variant}>{proofBadge.label}</Badge>}
+              </div>
+
+              {proofLoading ? (
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <Skeleton className="h-28 w-full rounded-lg" />
+                  <Skeleton className="h-28 w-full rounded-lg" />
+                </div>
+              ) : proof ? (
+                <div className="mt-3 space-y-3">
+                  <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                    <div className="rounded-md border border-border bg-background px-3 py-2">
+                      <p className="font-medium text-foreground">Thời gian xác nhận</p>
+                      <p className="mt-1">{formatDate(proof.createdTime)}</p>
+                    </div>
+                    <div className="rounded-md border border-border bg-background px-3 py-2">
+                      <p className="font-medium text-foreground">Số ảnh đã gửi</p>
+                      <p className="mt-1">{proof.images?.length ?? 0} ảnh</p>
+                    </div>
+                  </div>
+
+                  {proof.notes && (
+                    <div className="rounded-md border border-border bg-background px-3 py-2">
+                      <p className="text-xs font-medium text-foreground">Ghi chú của collector</p>
+                      <p className="mt-1 text-sm text-foreground">{proof.notes}</p>
+                    </div>
+                  )}
+
+                  {proof.images?.length ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      {proof.images.map((url, index) => (
+                        <a
+                          key={`${proof.proofId}-${index}`}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="overflow-hidden rounded-lg border border-border transition-opacity hover:opacity-90"
+                        >
+                          <img
+                            src={url}
+                            alt={`Ảnh xác nhận thu gom ${index + 1}`}
+                            className="h-32 w-full object-cover"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Collector chưa gửi ảnh xác nhận.</p>
+                  )}
+                </div>
+              ) : null}
             </div>
           )}
 
@@ -713,12 +794,13 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
                         <p className="text-sm font-medium text-foreground">{wt?.name ?? waste.wasteTypeId}</p>
                         <div className="mt-2 grid gap-2 sm:grid-cols-2">
                           <div>
-                            <Label className="text-xs">Số lượng *</Label>
+                            <Label className="text-xs">Số lượng (kg) *</Label>
                             <Input
                               type="number"
                               min="1"
                               step="1"
                               className="mt-1 h-8 text-sm"
+                              placeholder="Ví dụ: 10"
                               value={waste.quantity}
                               onChange={(e) => {
                                 const qty = parseInt(e.target.value) || 1;
@@ -732,7 +814,7 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
                             <Label className="text-xs">Ghi chú</Label>
                             <Input
                               className="mt-1 h-8 text-sm"
-                              placeholder="Ví dụ: túi 10kg"
+                              placeholder="Ví dụ: 2 túi nhỏ"
                               value={waste.note}
                               onChange={(e) => {
                                 setSelectedWastes((prev) =>

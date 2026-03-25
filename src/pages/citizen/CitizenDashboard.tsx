@@ -11,6 +11,16 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Plus, MapPin, Clock, Award, Trophy, Star, Camera, TrendingUp, Loader2, ChevronRight, X, Map, Search, AlertTriangle, ChevronDown, ChevronLeft, Leaf, Recycle, Flame, Package } from "lucide-react";
@@ -102,6 +112,7 @@ const CitizenDashboard = () => {
   const [uploadedImages, setUploadedImages] = useState<Array<{ url: string; publicId: string }>>([]);
   const [mapPickerOpen, setMapPickerOpen] = useState(false);
   const [open, setOpen] = useState(false);
+  const [confirmCreateOpen, setConfirmCreateOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<WasteReport | null>(null);
   const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
   const [imageSuggestion, setImageSuggestion] = useState<{ categoryLabel?: string; wasteTypeId?: string | null } | null>(null);
@@ -293,6 +304,7 @@ const CitizenDashboard = () => {
   };
 
   const closeCreateDialog = () => {
+    setConfirmCreateOpen(false);
     if (skipImageCleanupOnCloseRef.current) {
       skipImageCleanupOnCloseRef.current = false;
       skipImageCleanupOnCloseRef.current = true;
@@ -358,6 +370,7 @@ const CitizenDashboard = () => {
     mutationFn: wasteReportService.create,
     onSuccess: () => {
       toast.success("Báo cáo đã được gửi thành công!");
+      setConfirmCreateOpen(false);
       setOpen(false);
       resetForm();
       // Refresh danh sách báo cáo
@@ -497,23 +510,45 @@ const CitizenDashboard = () => {
     });
   };
 
-  const handleCreateReport = async (e: React.FormEvent) => {
+  const getCreateReportValidationError = () => {
+    if (selectedWastes.length === 0) return "Vui lòng chọn ít nhất 1 loại rác";
+    if (selectedWastes.some((w) => !w.quantity || w.quantity <= 0)) return "Vui lòng nhập số lượng > 0 cho tất cả loại rác";
+    if (imageFiles.length === 0) return "Vui lòng thêm ít nhất 1 ảnh";
+    if (uploadedImages.length !== imageFiles.length) return "Ảnh đang được xử lý, vui lòng chờ một chút";
+    if (!form.latitude) return "Vui lòng xác định vị trí GPS";
+    return null;
+  };
+
+  const handleCreateReport = (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmittingReport || isUploadingImages || createMutation.isPending) return;
-    if (selectedWastes.length === 0) { toast.error("Vui lòng chọn ít nhất 1 loại rác"); return; }
-    if (imageFiles.length === 0) { toast.error("Vui lòng có ít nhất 1 ảnh"); return; }
-    if (uploadedImages.length !== imageFiles.length) { toast.error("Ảnh đang được xử lý, vui lòng chờ một chút"); return; }
-    if (!form.latitude) { toast.error("Vui lòng xác định vị trí GPS"); return; }
-    if (selectedWastes.some((w) => !w.quantity || w.quantity <= 0)) {
-      toast.error("Số lượng phải lớn hơn 0");
+
+    const validationError = getCreateReportValidationError();
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
 
+    setConfirmCreateOpen(true);
+  };
+
+  const handleConfirmCreateReport = async () => {
+    if (isSubmittingReport || isUploadingImages || createMutation.isPending) return;
+
+    const validationError = getCreateReportValidationError();
+    if (validationError) {
+      toast.error(validationError);
+      setConfirmCreateOpen(false);
+      return;
+    }
+
+    setConfirmCreateOpen(false);
     setIsSubmittingReport(true);
     try {
       const imageUrls = uploadedImages.map((image) => image.url);
       await createMutation.mutateAsync({
         description: form.description || undefined,
+        address: form.address.trim() || undefined,
         latitude: form.latitude,
         longitude: form.longitude,
         wastes: selectedWastes.map((waste, i) => ({
@@ -536,12 +571,7 @@ const CitizenDashboard = () => {
   const createReportDisabledReason = (() => {
     if (isSubmittingReport || createMutation.isPending) return "Đang gửi báo cáo...";
     if (isUploadingImages) return "Ảnh đang được phân tích, vui lòng chờ một chút";
-    if (selectedWastes.length === 0) return "Vui lòng chọn ít nhất 1 loại rác";
-    if (selectedWastes.some((w) => !w.quantity || w.quantity <= 0)) return "Vui lòng nhập số lượng > 0 cho tất cả loại rác";
-    if (imageFiles.length === 0) return "Vui lòng thêm ít nhất 1 ảnh";
-    if (uploadedImages.length !== imageFiles.length) return "Ảnh chưa tải lên xong";
-    if (!form.latitude) return "Vui lòng xác định vị trí GPS";
-    return null;
+    return getCreateReportValidationError();
   })();
   const isCreateReportDisabled = !!createReportDisabledReason;
 
@@ -820,12 +850,13 @@ const CitizenDashboard = () => {
                                 <p className="text-sm font-medium text-foreground">{wt?.name ?? waste.wasteTypeId}</p>
                                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
                                   <div>
-                                    <Label className="text-xs">Số lượng *</Label>
+                                    <Label className="text-xs">Số lượng (kg) *</Label>
                                     <Input
                                       type="number"
                                       min="1"
                                       step="1"
                                       className="mt-1 h-8 text-sm"
+                                      placeholder="Ví dụ: 10"
                                       value={waste.quantity}
                                       onChange={(e) => {
                                         const qty = parseInt(e.target.value) || 1;
@@ -839,7 +870,7 @@ const CitizenDashboard = () => {
                                     <Label className="text-xs">Ghi chú</Label>
                                     <Input
                                       className="mt-1 h-8 text-sm"
-                                      placeholder="Ví dụ: túi 10kg"
+                                      placeholder="Ví dụ: 2 túi nhỏ"
                                       value={waste.note}
                                       onChange={(e) => {
                                         setSelectedWastes((prev) =>
@@ -1174,6 +1205,77 @@ const CitizenDashboard = () => {
         onUpdateNoEnterprise={(id, data) => updateNoEnterpriseMutation.mutate({ id, data })}
         isUpdatingNoEnterprise={updateNoEnterpriseMutation.isPending}
       />
+
+      <AlertDialog open={confirmCreateOpen} onOpenChange={setConfirmCreateOpen}>
+        <AlertDialogContent className="w-[calc(100vw-1rem)] max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display">Xác nhận gửi báo cáo</AlertDialogTitle>
+            <AlertDialogDescription>
+              Vui lòng kiểm tra lại thông tin trước khi gửi. Hệ thống có AI gợi ý loại rác từ ảnh, nên bạn nên xác nhận lại để đảm bảo báo cáo chính xác.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-3 text-sm">
+            {imageSuggestion?.categoryLabel && (
+              <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-green-800">
+                AI đang gợi ý nhóm rác: <span className="font-semibold">{imageSuggestion.categoryLabel}</span>
+              </div>
+            )}
+
+            <div className="rounded-lg border border-border bg-muted/30 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Loại rác đã chọn</p>
+              <div className="mt-2 space-y-2">
+                {selectedWastes.map((waste) => {
+                  const wasteType = wasteTypes.find((item) => item.id === waste.wasteTypeId);
+                  return (
+                    <div key={waste.wasteTypeId} className="rounded-md border border-border bg-background px-3 py-2">
+                      <p className="font-medium text-foreground">{wasteType?.name ?? waste.wasteTypeId}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {waste.quantity} kg
+                        {waste.note?.trim() ? ` • ${waste.note.trim()}` : ""}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-border bg-muted/30 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Hình ảnh</p>
+                <p className="mt-1 font-medium text-foreground">{imageFiles.length} ảnh đã tải lên</p>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/30 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Vị trí GPS</p>
+                <p className="mt-1 font-medium text-foreground">
+                  {locationName || `${form.latitude?.toFixed(5)}, ${form.longitude?.toFixed(5)}`}
+                </p>
+              </div>
+            </div>
+
+            {form.description?.trim() && (
+              <div className="rounded-lg border border-border bg-muted/30 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Mô tả</p>
+                <p className="mt-1 text-foreground">{form.description.trim()}</p>
+              </div>
+            )}
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSubmittingReport || createMutation.isPending}>
+              Xem lại
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSubmittingReport || createMutation.isPending}
+              onClick={() => {
+                void handleConfirmCreateReport();
+              }}
+            >
+              {isSubmittingReport || createMutation.isPending ? "Đang gửi..." : "Xác nhận và gửi"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={complaintDialogOpen} onOpenChange={(open) => { if (!open) closeComplaintDialog(); }}>
         <DialogContent className="w-[calc(100vw-1rem)] max-w-md">

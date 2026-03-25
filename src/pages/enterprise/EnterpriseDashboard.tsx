@@ -3,6 +3,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import EnterpriseProfileSetup from "./EnterpriseProfileSetup";
 import EnterprisePendingApproval from "./EnterprisePendingApproval";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -144,7 +145,8 @@ const RequestCard = ({
           {r.note && <p className="text-sm text-muted-foreground">{r.note}</p>}
           <p className="flex items-center gap-1 text-xs text-muted-foreground">
             <MapPin className="h-3 w-3" />
-            {r.latitude != null ? `${r.latitude.toFixed(5)}, ${r.longitude?.toFixed(5)}` : ""}
+            {r.address ?? (r.latitude != null ? `${r.latitude.toFixed(5)}, ${r.longitude?.toFixed(5)}` : "—")}
+            {r.address && r.latitude != null ? ` • ${r.latitude.toFixed(5)}, ${r.longitude?.toFixed(5)}` : ""}
             {r.regionCode ? ` • ${r.regionCode}` : ""}
             {" • "}{new Date(r.createdTime).toLocaleDateString("vi-VN")}
           </p>
@@ -176,6 +178,7 @@ const EnterpriseDashboard = () => {
 
   // ── collection request detail dialog ──
   const [selectedRequest, setSelectedRequest] = useState<CollectionRequest | null>(null);
+  const [postAcceptRequestId, setPostAcceptRequestId] = useState<string | null>(null);
   const [rejectReason, setRejectReason]       = useState("");
   const [rejectDialogId, setRejectDialogId]   = useState<string | null>(null);
 
@@ -259,9 +262,16 @@ const EnterpriseDashboard = () => {
   // ── collection request mutations ──
   const acceptReq = useMutation({
     mutationFn: (id: string) => collectionRequestService.accept(id),
-    onSuccess: () => {
-      toast.success("Đã tiếp nhận yêu cầu");
-      setSelectedRequest(null);
+    onSuccess: (_, requestId) => {
+      toast.success("Đã tiếp nhận yêu cầu. Hãy gán collector để tiếp tục xử lý đơn.");
+      setReqStatusTab("Accepted");
+      setAssignCollectorId("");
+      setPostAcceptRequestId(requestId);
+      setSelectedRequest((current) =>
+        current && current.id === requestId
+          ? { ...current, status: "Accepted", hasAssignment: false }
+          : current
+      );
       qc.invalidateQueries({ queryKey: ["collectionRequests"] });
     },
     onError: () => toast.error("Tiếp nhận thất bại"),
@@ -293,6 +303,7 @@ const EnterpriseDashboard = () => {
     onSuccess: () => {
       toast.success("Đã gán collector thành công");
       setSelectedRequest(null);
+      setPostAcceptRequestId(null);
       setAssignCollectorId("");
       qc.invalidateQueries({ queryKey: ["collectionRequests"] });
     },
@@ -344,17 +355,17 @@ const EnterpriseDashboard = () => {
   // District + Ward for area dialog
   const { data: districtsData } = useQuery({
     queryKey: ["districts"],
-    queryFn: () => districtService.getAll({ PageSize: 100 }),
+    queryFn: () => districtService.getAllItems({ PageSize: 100 }),
     enabled: isApproved && !!areaDialog,
   });
-  const districts = districtsData?.items ?? [];
+  const districts = districtsData ?? [];
 
   const { data: wardsData } = useQuery({
     queryKey: ["wards", areaDistrictId],
-    queryFn: () => wardService.getAll({ DistrictId: areaDistrictId, PageSize: 100 }),
+    queryFn: () => wardService.getAllItems({ DistrictId: areaDistrictId, PageSize: 100 }),
     enabled: isApproved && !!areaDistrictId,
   });
-  const wards = wardsData?.items ?? [];
+  const wards = wardsData ?? [];
 
   const { data: capData, isLoading: capLoading } = useQuery({
     queryKey: ["wasteCapabilities", enterpriseId],
@@ -1214,7 +1225,7 @@ const EnterpriseDashboard = () => {
       </Tabs>
 
       {/* ══ Dialog: Collection Request Detail ══ */}
-      <Dialog open={!!selectedRequest} onOpenChange={(o) => { if (!o) setSelectedRequest(null); }}>
+      <Dialog open={!!selectedRequest} onOpenChange={(o) => { if (!o) { setSelectedRequest(null); setPostAcceptRequestId(null); } }}>
         {selectedRequest && (
         <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-lg">
             <DialogHeader>
@@ -1230,6 +1241,7 @@ const EnterpriseDashboard = () => {
                 {[
                   { label: "Loại rác",     value: selectedRequest.wasteTypeName ?? "—" },
                   { label: "Độ ưu tiên",   value: String(selectedRequest.priorityScore) },
+                  { label: "Địa chỉ",      value: selectedRequest.address ?? "—" },
                   { label: "Mã khu vực",   value: selectedRequest.regionCode ?? "—" },
                   { label: "Toạ độ",       value: selectedRequest.latitude != null ? `${selectedRequest.latitude.toFixed(6)}, ${selectedRequest.longitude?.toFixed(6)}` : "—" },
                   { label: "Ngày tạo",     value: new Date(selectedRequest.createdTime).toLocaleString("vi-VN") },
@@ -1279,6 +1291,18 @@ const EnterpriseDashboard = () => {
                 </div>
               )}
             </div>
+
+            {selectedRequest.status === "Accepted" && (
+              <Alert className="border-primary/20 bg-primary/5">
+                <CheckCircle className="h-4 w-4 text-primary" />
+                <AlertTitle>Đơn đã được tiếp nhận</AlertTitle>
+                <AlertDescription>
+                  {postAcceptRequestId === selectedRequest.id
+                    ? "Hệ thống đã chuyển đơn sang tab Đã nhận. Bước tiếp theo là gán collector cho đơn này để tiếp tục xử lý."
+                    : "Bước tiếp theo là gán collector cho đơn này để chuyển sang giai đoạn đang thu gom."}
+                </AlertDescription>
+              </Alert>
+            )}
 
             {/* Actions — only for Accepted: assign collector */}
             {selectedRequest.status === "Accepted" && (

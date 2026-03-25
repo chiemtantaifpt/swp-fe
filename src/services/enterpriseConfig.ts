@@ -67,6 +67,13 @@ export interface CreateDistrictDto {
   provinceCode: string;
 }
 
+export interface DistrictListParams {
+  ProvinceCode?: string;
+  Keyword?: string;
+  PageNumber?: number;
+  PageSize?: number;
+}
+
 export interface Ward {
   id: string;
   districtId: string;
@@ -82,6 +89,13 @@ export interface CreateWardDto {
   code: string;
 }
 
+export interface WardListParams {
+  DistrictId?: string;
+  Keyword?: string;
+  PageNumber?: number;
+  PageSize?: number;
+}
+
 export interface CreateDistrictThenWardInput {
   district: CreateDistrictDto;
   ward: Omit<CreateWardDto, "districtId">;
@@ -92,10 +106,39 @@ export interface CreateDistrictThenWardResult {
   ward: Ward;
 }
 
+const getAllPagedItems = async <T>(
+  fetchPage: (pageNumber: number, pageSize: number) => Promise<PagedResult<T>>,
+  pageSize = 100
+): Promise<T[]> => {
+  const firstPage = await fetchPage(1, pageSize);
+  const items = [...firstPage.items];
+  const totalPages = Math.max(1, Math.ceil((firstPage.totalCount || items.length) / pageSize));
+
+  for (let pageNumber = 2; pageNumber <= totalPages; pageNumber += 1) {
+    const nextPage = await fetchPage(pageNumber, pageSize);
+    items.push(...nextPage.items);
+  }
+
+  return items;
+};
+
 export const districtService = {
-  getAll: async (params?: { ProvinceCode?: string; Keyword?: string; PageNumber?: number; PageSize?: number }): Promise<PagedResult<District>> => {
+  getAll: async (params?: DistrictListParams): Promise<PagedResult<District>> => {
     const res = await api.get<PagedResult<District>>("/District", { params });
     return res.data;
+  },
+
+  getAllItems: async (params?: Omit<DistrictListParams, "PageNumber">): Promise<District[]> => {
+    const pageSize = params?.PageSize ?? 100;
+    return getAllPagedItems(
+      (pageNumber, currentPageSize) =>
+        districtService.getAll({
+          ...params,
+          PageNumber: pageNumber,
+          PageSize: currentPageSize,
+        }),
+      pageSize
+    );
   },
 
   create: async (body: CreateDistrictDto): Promise<District> => {
@@ -105,9 +148,22 @@ export const districtService = {
 };
 
 export const wardService = {
-  getAll: async (params?: { DistrictId?: string; Keyword?: string; PageNumber?: number; PageSize?: number }): Promise<PagedResult<Ward>> => {
+  getAll: async (params?: WardListParams): Promise<PagedResult<Ward>> => {
     const res = await api.get<PagedResult<Ward>>("/Ward", { params });
     return res.data;
+  },
+
+  getAllItems: async (params?: Omit<WardListParams, "PageNumber">): Promise<Ward[]> => {
+    const pageSize = params?.PageSize ?? 100;
+    return getAllPagedItems(
+      (pageNumber, currentPageSize) =>
+        wardService.getAll({
+          ...params,
+          PageNumber: pageNumber,
+          PageSize: currentPageSize,
+        }),
+      pageSize
+    );
   },
 
   create: async (body: CreateWardDto): Promise<Ward> => {
