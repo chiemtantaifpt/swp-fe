@@ -1327,12 +1327,12 @@ const EnterpriseDashboard = () => {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="colPassword">M???t kh???u <span className="text-destructive">*</span></Label>
+              <Label htmlFor="colPassword">Mật khẩu <span className="text-destructive">*</span></Label>
               <div className="relative">
                 <Input
                   id="colPassword"
                   type={showColPassword ? "text" : "password"}
-                  placeholder="T???i thi???u 6 k?? t???"
+                  placeholder="Tối thiểu 6 ký tự (gồm in hoa, thường, số và ký tự đặc biệt)"
                   value={colPassword}
                   onChange={(e) => setColPassword(e.target.value)}
                   className="pr-10"
