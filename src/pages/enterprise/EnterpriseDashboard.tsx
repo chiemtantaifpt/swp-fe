@@ -700,14 +700,14 @@ const EnterpriseDashboard = () => {
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <p className="text-foreground">
-                Frontend đã bổ sung complaint flow cho Citizen và Admin. Riêng bước doanh nghiệp phản hồi dispute hiện chưa thể gọi API thật vì backend chưa có endpoint enterprise-specific để:
+                Frontend đã bổ sung luồng khiếu nại cho Citizen và Admin. Riêng bước doanh nghiệp phản hồi hiện chưa thể gọi API thật vì backend chưa có endpoint riêng cho doanh nghiệp để:
               </p>
               <div className="space-y-1 text-muted-foreground">
-                <p>- Lấy danh sách complaint liên quan đến doanh nghiệp hiện tại.</p>
-                <p>- Gửi nội dung phản hồi dispute từ doanh nghiệp.</p>
+                <p>- Lấy danh sách khiếu nại liên quan đến doanh nghiệp hiện tại.</p>
+                <p>- Gửi nội dung phản hồi từ doanh nghiệp.</p>
               </div>
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900">
-                Hiện swagger chỉ có các endpoint complaint cho `Citizen` và `Admin`: tạo complaint, danh sách của tôi, danh sách admin, chi tiết và cập nhật status.
+                Hiện swagger chỉ có các endpoint khiếu nại cho `Citizen` và `Admin`: tạo khiếu nại, danh sách của tôi, danh sách admin, chi tiết và cập nhật trạng thái.
               </div>
             </CardContent>
           </Card>
@@ -722,7 +722,7 @@ const EnterpriseDashboard = () => {
                   <AlertCircle className="h-5 w-5 text-amber-600" /> Khiếu nại doanh nghiệp
                 </CardTitle>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Theo dõi complaint liên quan đến doanh nghiệp và phản hồi khi khiếu nại đang được xem xét.
+                  Theo dõi khiếu nại liên quan đến doanh nghiệp và phản hồi khi khiếu nại đang được xem xét.
                 </p>
               </div>
               <div className="w-full sm:w-56">
@@ -1601,7 +1601,7 @@ const EnterpriseDashboard = () => {
                 </div>
                 {respondingComplaint.resolutions.length === 0 ? (
                   <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                    Chưa có phản hồi dispute nào cho khiếu nại này.
+                    Chưa có phản hồi nào cho khiếu nại này.
                   </div>
                 ) : (
                   <div className="space-y-3">

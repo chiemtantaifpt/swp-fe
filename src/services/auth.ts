@@ -2,6 +2,7 @@ import api from "./api";
 import { User, UserRole } from "@/contexts/AuthContext";
 import { AxiosError } from "axios";
 import { jwtDecode } from "jwt-decode";
+import type { BaseResponse } from "./baseResponse";
 
 export interface LoginRequest {
   email: string;
@@ -129,6 +130,44 @@ export interface EnterpriseInfo {
   environmentLicenseFileId?: string;
 }
 
+export type VerifyEmailNextStep =
+  | "Login"
+  | "CompleteEnterpriseProfile"
+  | "WaitForApproval"
+  | string;
+
+export interface VerifyEmailResponse {
+  message: string | null;
+  nextStep: VerifyEmailNextStep;
+}
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const normalizeVerifyEmailResponse = (
+  value: unknown
+): VerifyEmailResponse => {
+  const root = isObject(value) ? value : {};
+  const payload =
+    "data" in root && isObject(root.data) ? root.data : root;
+
+  const rootMessage =
+    typeof root.message === "string" ? root.message : null;
+  const payloadMessage =
+    isObject(payload) && typeof payload.message === "string"
+      ? payload.message
+      : null;
+  const nextStep =
+    isObject(payload) && typeof payload.nextStep === "string"
+      ? payload.nextStep
+      : "Login";
+
+  return {
+    message: payloadMessage ?? rootMessage,
+    nextStep,
+  };
+};
+
 export const authService = {
   login: async (email: string, password: string): Promise<AuthResponse> => {
     try {
@@ -166,6 +205,23 @@ export const authService = {
         ...(enterpriseInfo ? { enterpriseInfo } : {}),
       });
       return response.data;
+    } catch (error) {
+      const msg = parseBackendError(error as AxiosError);
+      throw new Error(msg);
+    }
+  },
+
+  verifyEmail: async (
+    userId: string,
+    token: string
+  ): Promise<VerifyEmailResponse> => {
+    try {
+      const response = await api.get<
+        VerifyEmailResponse | BaseResponse<VerifyEmailResponse>
+      >("/auth/verify-email", {
+        params: { userId, token },
+      });
+      return normalizeVerifyEmailResponse(response.data);
     } catch (error) {
       const msg = parseBackendError(error as AxiosError);
       throw new Error(msg);

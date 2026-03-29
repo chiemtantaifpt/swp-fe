@@ -38,6 +38,7 @@ const roleLabels: Record<string, string> = {
 const complaintStatusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   Open: { label: "Mở", variant: "secondary" },
   InReview: { label: "Đang xem xét", variant: "outline" },
+  EnterpriseResponded: { label: "Doanh nghiệp đã phản hồi", variant: "outline" },
   Resolved: { label: "Đã giải quyết", variant: "default" },
   Rejected: { label: "Từ chối", variant: "destructive" },
 };
@@ -443,7 +444,7 @@ const AdminDashboard = () => {
   );
   const openComplaintCount = complaints.filter((complaint) => {
     const status = complaint.status?.toUpperCase();
-    return status === "OPEN" || status === "INREVIEW";
+    return status === "OPEN" || status === "INREVIEW" || status === "ENTERPRISERESPONDED";
   }).length;
 
   const { data: complaintDetail, isLoading: complaintDetailLoading, isError: complaintDetailError } = useQuery({
@@ -1226,6 +1227,7 @@ const AdminDashboard = () => {
                     <SelectItem value="all">Tất cả trạng thái</SelectItem>
                     <SelectItem value="Open">Mở</SelectItem>
                     <SelectItem value="InReview">Đang xem xét</SelectItem>
+                    <SelectItem value="EnterpriseResponded">Doanh nghiệp đã phản hồi</SelectItem>
                     <SelectItem value="Resolved">Đã giải quyết</SelectItem>
                     <SelectItem value="Rejected">Từ chối</SelectItem>
                   </SelectContent>
@@ -1272,6 +1274,25 @@ const AdminDashboard = () => {
                                 <Badge variant="outline" className="px-3 py-2 text-xs">
                                   Đang trong bước xử lý
                                 </Badge>
+                              )}
+                              {complaint.status === "EnterpriseResponded" && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    disabled={updateComplaintStatusMutation.isPending}
+                                    onClick={() => updateComplaintStatusMutation.mutate({ id: complaint.id, status: "Resolved" })}
+                                  >
+                                    <CheckCircle className="mr-1 h-4 w-4" /> Đã giải quyết
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    disabled={updateComplaintStatusMutation.isPending}
+                                    onClick={() => updateComplaintStatusMutation.mutate({ id: complaint.id, status: "Rejected" })}
+                                  >
+                                    <Ban className="mr-1 h-4 w-4" /> Từ chối
+                                  </Button>
+                                </>
                               )}
                               <Button size="sm" onClick={() => openComplaintDetail(complaint.id)}>
                                 <Eye className="mr-1 h-4 w-4" /> Chi tiết
@@ -1468,6 +1489,12 @@ const AdminDashboard = () => {
                 </div>
               )}
 
+              {complaintDetail.status === "EnterpriseResponded" && (
+                <div className="rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
+                  Doanh nghiệp đã phản hồi khiếu nại này. Quản trị viên cần chọn kết quả cuối cùng là Đã giải quyết hoặc Từ chối.
+                </div>
+              )}
+
               <div className="rounded-lg border border-border p-4">
                 <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-sm font-medium text-foreground">Lịch sử xử lý</p>
@@ -1524,6 +1551,24 @@ const AdminDashboard = () => {
                   >
                     Từ chối
                   </Button>
+                )}
+
+                {complaintDetail.status === "EnterpriseResponded" && (
+                  <>
+                    <Button
+                      disabled={updateComplaintStatusMutation.isPending}
+                      onClick={() => updateComplaintStatusMutation.mutate({ id: complaintDetail.id, status: "Resolved" })}
+                    >
+                      <CheckCircle className="mr-1 h-4 w-4" /> Đã giải quyết
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      disabled={updateComplaintStatusMutation.isPending}
+                      onClick={() => updateComplaintStatusMutation.mutate({ id: complaintDetail.id, status: "Rejected" })}
+                    >
+                      <Ban className="mr-1 h-4 w-4" /> Từ chối
+                    </Button>
+                  </>
                 )}
               </div>
             )}

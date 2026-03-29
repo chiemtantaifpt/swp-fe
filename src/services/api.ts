@@ -27,7 +27,7 @@ api.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
     if (error.response?.status === 401) {
-      const authPages = ["/login", "/register"];
+      const authPages = ["/login", "/register", "/verify-email"];
       const isOnAuthPage = authPages.some((p) => window.location.pathname.startsWith(p));
 
       if (!isOnAuthPage) {

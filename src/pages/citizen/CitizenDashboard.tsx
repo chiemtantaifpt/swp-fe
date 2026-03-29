@@ -49,6 +49,7 @@ const statusMap: Record<string, { label: string; variant: "default" | "secondary
 const complaintStatusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   Open: { label: "Mở", variant: "secondary" },
   InReview: { label: "Đang xem xét", variant: "outline" },
+  EnterpriseResponded: { label: "Doanh nghiệp đã phản hồi", variant: "outline" },
   Resolved: { label: "Đã giải quyết", variant: "default" },
   Rejected: { label: "Từ chối", variant: "destructive" },
 };
@@ -83,6 +84,12 @@ const CitizenComplaintCard = ({
 }) => {
   const badge = complaintStatusMap[complaint.status] || { label: complaint.status, variant: "secondary" as const };
   const complaintTypeLabel = complaintTypeMap[complaint.type] || complaint.type;
+  const complaintSummary =
+    complaint.status === "Resolved"
+      ? "Đã có kết quả xử lý"
+      : complaint.status === "EnterpriseResponded"
+        ? "Doanh nghiệp đã phản hồi, chờ quản trị viên quyết định"
+        : "Đang chờ phản hồi";
 
   return (
     <Card className="shadow-card">
@@ -99,9 +106,7 @@ const CitizenComplaintCard = ({
         </div>
 
         <div className="flex shrink-0 items-center gap-3">
-          <span className="text-xs text-muted-foreground">
-            {complaint.status === "Resolved" ? "Đã có kết quả xử lý" : "Đang chờ phản hồi"}
-          </span>
+          <span className="text-xs text-muted-foreground">{complaintSummary}</span>
           <Button size="sm" variant="outline" onClick={() => onView(complaint)}>
             Xem chi tiết
           </Button>
@@ -1390,14 +1395,18 @@ const CitizenDashboard = () => {
 
               <div className="rounded-lg border border-border p-4">
                 <p className="text-sm font-medium text-foreground">Kết quả xử lý</p>
-                {selectedComplaint.status !== "Resolved" ? (
+                {selectedComplaint.status === "EnterpriseResponded" ? (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Doanh nghiệp đã phản hồi khiếu nại này. Khiếu nại hiện đang chờ quản trị viên đưa ra kết quả cuối cùng.
+                  </p>
+                ) : selectedComplaint.status !== "Resolved" ? (
                   <p className="mt-1 text-sm text-muted-foreground">Khiếu nại này đang được xử lý hoặc chưa có kết quả cuối cùng.</p>
                 ) : selectedComplaintResolutionsLoading ? (
                   <p className="mt-1 text-sm text-muted-foreground">Đang tải kết quả xử lý...</p>
                 ) : selectedComplaintResolutionsError ? (
                   <p className="mt-1 text-sm text-destructive">Không thể tải kết quả xử lý</p>
                 ) : selectedComplaintResolutions.length === 0 ? (
-                  <p className="mt-1 text-sm text-muted-foreground">Backend chưa trả về dispute resolution cho complaint này.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Hệ thống chưa trả về lịch sử phản hồi cho khiếu nại này.</p>
                 ) : (
                   <div className="mt-2 space-y-2">
                     {selectedComplaintResolutions.map((resolution) => (

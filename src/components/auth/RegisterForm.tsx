@@ -111,7 +111,7 @@ export default function RegisterForm() {
             }
           : undefined
       );
-      toast.success("Đăng ký thành công! Vui lòng đăng nhập.");
+      toast.success("Đăng ký thành công! Vui lòng kiểm tra email để xác thực tài khoản.");
       navigate("/login");
     } catch (error) {
       const msg =
