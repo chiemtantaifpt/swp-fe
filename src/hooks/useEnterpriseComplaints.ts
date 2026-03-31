@@ -39,6 +39,7 @@ export const useCreateDisputeResolution = () => {
       disputeResolutionService.createDisputeResolution(payload),
     onSuccess: async (_data, variables) => {
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: disputeResolutionQueryKeys.all }),
         queryClient.invalidateQueries({ queryKey: complaintQueryKeys.all }),
         queryClient.invalidateQueries({ queryKey: complaintQueryKeys.enterprise() }),
         queryClient.invalidateQueries({ queryKey: complaintQueryKeys.detail(variables.complaintId) }),

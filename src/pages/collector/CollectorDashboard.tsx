@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { CollectorDashboardCharts } from "@/components/dashboard/RoleDashboardCharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Truck, MapPin, Clock, CheckCircle, Package, Navigation, AlertCircle, Image as ImageIcon, Eye, ExternalLink, Loader2 } from "lucide-react";
+import { Truck, MapPin, Clock, CheckCircle, Package, Navigation, AlertCircle, Image as ImageIcon, Eye, ExternalLink, Loader2, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -269,11 +270,19 @@ const CollectorDashboard = () => {
         ))}
       </div>
 
-      <Tabs defaultValue="active">
+      <Tabs defaultValue="dashboard">
         <TabsList className="flex w-full justify-start overflow-x-auto whitespace-nowrap">
+          <TabsTrigger value="dashboard" className="gap-1.5">
+            <BarChart3 className="h-4 w-4" />
+            Biểu đồ
+          </TabsTrigger>
           <TabsTrigger value="active">Việc cần làm ({isLoading ? "…" : activeTasks.length})</TabsTrigger>
           <TabsTrigger value="history">Lịch sử ({isLoading ? "…" : historyTasks.length})</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="dashboard">
+          <CollectorDashboardCharts />
+        </TabsContent>
 
         {/* ── Active tab ── */}
         <TabsContent value="active">

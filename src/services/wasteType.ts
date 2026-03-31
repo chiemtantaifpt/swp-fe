@@ -1,11 +1,11 @@
 import api from "./api";
 
-// Category enum khớp BE: Organic=0, Recyclable=1, Hazardous=2, Other=3
+// Category enum khop BE: Organic=0, Recyclable=1, Hazardous=2, Other=3
 export const WASTE_CATEGORIES: Record<number, string> = {
-  0: "Hữu cơ (Organic)",
-  1: "Tái chế (Recyclable)",
-  2: "Nguy hại (Hazardous)",
-  3: "Khác (Other)",
+  0: "Hữu cơ",
+  1: "Tái chế",
+  2: "Nguy hại",
+  3: "Khác",
 };
 
 export interface WasteType {

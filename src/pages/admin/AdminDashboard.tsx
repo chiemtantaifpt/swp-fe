@@ -1,6 +1,8 @@
 ﻿import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/DashboardLayout";
+import { AdminDashboardCharts } from "@/components/dashboard/RoleDashboardCharts";
+import SimplePagination from "@/components/SimplePagination";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,6 +51,11 @@ const complaintStatusMap: Record<string, { label: string; variant: "default" | "
   EnterpriseResponded: { label: "Doanh nghiệp đã phản hồi", variant: "outline" },
   Resolved: { label: "Đã giải quyết", variant: "default" },
   Rejected: { label: "Từ chối", variant: "destructive" },
+};
+
+const complaintTypeLabels: Record<string, string> = {
+  Complaint: "Khiếu nại",
+  Feedback: "Phản hồi",
 };
 
 const enterpriseApprovalStatusLabels: Record<string, string> = {
@@ -703,6 +710,8 @@ const AdminDashboard = () => {
   const [filterKeyword, setFilterKeyword] = useState("");
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [complaintStatusFilter, setComplaintStatusFilter] = useState<string>("all");
+  const [complaintPageNumber, setComplaintPageNumber] = useState(1);
+  const [complaintResolutionPageNumber, setComplaintResolutionPageNumber] = useState(1);
   const [selectedComplaintId, setSelectedComplaintId] = useState<string | null>(null);
   const [complaintDetailOpen, setComplaintDetailOpen] = useState(false);
   const [pointRuleFormOpen, setPointRuleFormOpen] = useState(false);
@@ -741,18 +750,43 @@ const AdminDashboard = () => {
     queryFn: () => enterpriseApprovalService.getAll({ PageNumber: 1, PageSize: 50 }),
   });
 
+  useEffect(() => {
+    setComplaintPageNumber(1);
+  }, [complaintStatusFilter]);
+
+  useEffect(() => {
+    setComplaintResolutionPageNumber(1);
+  }, [selectedComplaintId]);
+
+  const { data: complaintPendingSummary } = useQuery({
+    queryKey: ["adminComplaints", "summary", "pending"],
+    queryFn: async () => {
+      const [openData, inReviewData, respondedData] = await Promise.all([
+        complaintService.getAdmin({ PageNumber: 1, PageSize: 1, Status: "Open" }),
+        complaintService.getAdmin({ PageNumber: 1, PageSize: 1, Status: "InReview" }),
+        complaintService.getAdmin({ PageNumber: 1, PageSize: 1, Status: "EnterpriseResponded" }),
+      ]);
+
+      return (
+        (openData.totalCount ?? 0) +
+        (inReviewData.totalCount ?? 0) +
+        (respondedData.totalCount ?? 0)
+      );
+    },
+  });
+
   const { data: complaintData, isLoading: complaintLoading, isError: complaintError } = useQuery({
-    queryKey: ["adminComplaints"],
-    queryFn: () => complaintService.getAdmin({ PageNumber: 1, PageSize: 100 }),
+    queryKey: ["adminComplaints", complaintStatusFilter, complaintPageNumber],
+    queryFn: () =>
+      complaintService.getAdmin({
+        PageNumber: complaintPageNumber,
+        PageSize: 10,
+        Status: complaintStatusFilter === "all" ? undefined : complaintStatusFilter,
+      }),
   });
   const complaints = complaintData?.items ?? [];
-  const filteredComplaints = complaints.filter((complaint) =>
-    complaintStatusFilter === "all" ? true : complaint.status === complaintStatusFilter
-  );
-  const openComplaintCount = complaints.filter((complaint) => {
-    const status = complaint.status?.toUpperCase();
-    return status === "OPEN" || status === "INREVIEW" || status === "ENTERPRISERESPONDED";
-  }).length;
+  const filteredComplaints = complaints;
+  const openComplaintCount = complaintPendingSummary ?? 0;
 
   const { data: complaintDetail, isLoading: complaintDetailLoading, isError: complaintDetailError } = useQuery({
     queryKey: ["adminComplaintDetail", selectedComplaintId],
@@ -761,14 +795,20 @@ const AdminDashboard = () => {
   });
 
   const {
-    data: complaintResolutionHistory = [],
+    data: complaintResolutionHistoryData,
     isLoading: complaintResolutionLoading,
     isError: complaintResolutionError,
   } = useQuery({
-    queryKey: ["complaintResolutions", selectedComplaintId],
-    queryFn: () => disputeResolutionService.getByComplaint(selectedComplaintId!),
+    queryKey: ["complaintResolutions", selectedComplaintId, complaintResolutionPageNumber],
+    queryFn: () =>
+      disputeResolutionService.getAll({
+        complaintId: selectedComplaintId!,
+        pageNumber: complaintResolutionPageNumber,
+        pageSize: 10,
+      }),
     enabled: !!selectedComplaintId,
   });
+  const complaintResolutionHistory = complaintResolutionHistoryData?.items ?? [];
 
   const {
     data: adminRewards = [],
@@ -1146,8 +1186,12 @@ const AdminDashboard = () => {
         ))}
       </div>
 
-      <Tabs defaultValue="users">
+      <Tabs defaultValue="dashboard">
         <TabsList className="flex w-full justify-start overflow-x-auto whitespace-nowrap">
+          <TabsTrigger value="dashboard" className="gap-1.5">
+            <BarChart3 className="h-4 w-4" />
+            Biểu đồ
+          </TabsTrigger>
           <TabsTrigger value="users">Quản lý người dùng</TabsTrigger>
           <TabsTrigger value="wastetype">Loại rác</TabsTrigger>
           <TabsTrigger value="point-rule">Quy tắc điểm</TabsTrigger>
@@ -1157,6 +1201,10 @@ const AdminDashboard = () => {
         </TabsList>
 
         {/* ── Users Tab ─────────────────────────────────────── */}
+        <TabsContent value="dashboard">
+          <AdminDashboardCharts />
+        </TabsContent>
+
         <TabsContent value="users">
           <Card className="shadow-card mb-4">
             <CardHeader>
@@ -1720,68 +1768,78 @@ const AdminDashboard = () => {
               ) : filteredComplaints.length === 0 ? (
                 <p className="py-8 text-center text-sm text-muted-foreground">Chưa có khiếu nại nào phù hợp bộ lọc</p>
               ) : (
-                <div className="space-y-3">
-                  {filteredComplaints.map((complaint) => {
-                    const badge = complaintStatusMap[complaint.status] || { label: complaint.status, variant: "secondary" as const };
-                    return (
-                      <Card key={complaint.id} className="shadow-card">
-                        <CardContent className="p-4">
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="space-y-1">
-                              <div className="mb-1 flex flex-wrap items-center gap-2">
-                                <Badge variant="outline">{complaint.type}</Badge>
-                                <Badge variant={badge.variant}>{badge.label}</Badge>
+                <>
+                  <div className="space-y-3">
+                    {filteredComplaints.map((complaint) => {
+                      const badge = complaintStatusMap[complaint.status] || { label: complaint.status, variant: "secondary" as const };
+                      return (
+                        <Card key={complaint.id} className="shadow-card">
+                          <CardContent className="p-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="space-y-1">
+                                <div className="mb-1 flex flex-wrap items-center gap-2">
+                                  <Badge variant="outline">
+                                    {complaintTypeLabels[complaint.type] ?? complaint.type}
+                                  </Badge>
+                                  <Badge variant={badge.variant}>{badge.label}</Badge>
+                                </div>
+                                <p className="text-sm font-medium text-foreground">{getComplaintTitle(complaint.content)}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Khiếu nại được tạo lúc {new Date(complaint.createdTime).toLocaleString("vi-VN")}
+                                </p>
                               </div>
-                              <p className="text-sm font-medium text-foreground">{getComplaintTitle(complaint.content)}</p>
-                              <p className="text-xs text-muted-foreground">
-                                Khiếu nại được tạo lúc {new Date(complaint.createdTime).toLocaleString("vi-VN")}
-                              </p>
-                            </div>
-                            <div className="flex shrink-0 gap-2">
-                              {complaint.status === "Open" && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  disabled={updateComplaintStatusMutation.isPending}
-                                  onClick={() => updateComplaintStatusMutation.mutate({ id: complaint.id, status: "InReview" })}
-                                >
-                                  <Shield className="mr-1 h-4 w-4" /> Nhận xử lý
+                              <div className="flex shrink-0 gap-2">
+                                {complaint.status === "Open" && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={updateComplaintStatusMutation.isPending}
+                                    onClick={() => updateComplaintStatusMutation.mutate({ id: complaint.id, status: "InReview" })}
+                                  >
+                                    <Shield className="mr-1 h-4 w-4" /> Nhận xử lý
+                                  </Button>
+                                )}
+                                {complaint.status === "InReview" && (
+                                  <Badge variant="outline" className="px-3 py-2 text-xs">
+                                    Đang trong bước xử lý
+                                  </Badge>
+                                )}
+                                {complaint.status === "EnterpriseResponded" && (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      disabled={updateComplaintStatusMutation.isPending}
+                                      onClick={() => updateComplaintStatusMutation.mutate({ id: complaint.id, status: "Resolved" })}
+                                    >
+                                      <CheckCircle className="mr-1 h-4 w-4" /> Đã giải quyết
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      disabled={updateComplaintStatusMutation.isPending}
+                                      onClick={() => updateComplaintStatusMutation.mutate({ id: complaint.id, status: "Rejected" })}
+                                    >
+                                      <Ban className="mr-1 h-4 w-4" /> Từ chối
+                                    </Button>
+                                  </>
+                                )}
+                                <Button size="sm" onClick={() => openComplaintDetail(complaint.id)}>
+                                  <Eye className="mr-1 h-4 w-4" /> Chi tiết
                                 </Button>
-                              )}
-                              {complaint.status === "InReview" && (
-                                <Badge variant="outline" className="px-3 py-2 text-xs">
-                                  Đang trong bước xử lý
-                                </Badge>
-                              )}
-                              {complaint.status === "EnterpriseResponded" && (
-                                <>
-                                  <Button
-                                    size="sm"
-                                    disabled={updateComplaintStatusMutation.isPending}
-                                    onClick={() => updateComplaintStatusMutation.mutate({ id: complaint.id, status: "Resolved" })}
-                                  >
-                                    <CheckCircle className="mr-1 h-4 w-4" /> Đã giải quyết
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="destructive"
-                                    disabled={updateComplaintStatusMutation.isPending}
-                                    onClick={() => updateComplaintStatusMutation.mutate({ id: complaint.id, status: "Rejected" })}
-                                  >
-                                    <Ban className="mr-1 h-4 w-4" /> Từ chối
-                                  </Button>
-                                </>
-                              )}
-                              <Button size="sm" onClick={() => openComplaintDetail(complaint.id)}>
-                                <Eye className="mr-1 h-4 w-4" /> Chi tiết
-                              </Button>
+                              </div>
                             </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                  <SimplePagination
+                    pageNumber={complaintData?.pageNumber ?? complaintPageNumber}
+                    pageSize={complaintData?.pageSize ?? 10}
+                    totalCount={complaintData?.totalCount ?? filteredComplaints.length}
+                    onPageChange={setComplaintPageNumber}
+                  />
+                </>
               )}
             </CardContent>
           </Card>
@@ -1933,7 +1991,7 @@ const AdminDashboard = () => {
             <div className="space-y-4">
               <div className="grid gap-3 md:grid-cols-2">
                 {[
-                  { label: "Loại khiếu nại", value: complaintDetail.type === "Feedback" ? "Phản hồi" : "Khiếu nại" },
+                  { label: "Loại khiếu nại", value: complaintTypeLabels[complaintDetail.type] ?? complaintDetail.type },
                   { label: "Thời gian tạo", value: formatDate(complaintDetail.createdTime) },
                   { label: "Trạng thái", value: (complaintStatusMap[complaintDetail.status] || { label: complaintDetail.status }).label },
                   { label: "Nguồn gửi", value: complaintDetail.collectionRequestId ? "Từ yêu cầu thu gom" : "Từ báo cáo rác" },
@@ -1976,7 +2034,9 @@ const AdminDashboard = () => {
               <div className="rounded-lg border border-border p-4">
                 <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-sm font-medium text-foreground">Lịch sử xử lý</p>
-                  <span className="text-xs text-muted-foreground">{complaintResolutionHistory.length} mục</span>
+                  <span className="text-xs text-muted-foreground">
+                    {complaintResolutionHistoryData?.totalCount ?? complaintResolutionHistory.length} mục
+                  </span>
                 </div>
                 {complaintResolutionLoading ? (
                   <p className="text-sm text-muted-foreground">Đang tải lịch sử xử lý...</p>
@@ -1985,21 +2045,29 @@ const AdminDashboard = () => {
                 ) : complaintResolutionHistory.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Chưa có kết quả xử lý nào cho khiếu nại này.</p>
                 ) : (
-                  <div className="space-y-2">
-                    {complaintResolutionHistory.map((resolution) => (
-                      <div key={resolution.id} className="rounded-md border border-border bg-muted/30 p-3 text-sm">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="font-medium text-foreground">{resolution.responseNote || resolution.resolutionNote || "Không có nội dung"}</p>
-                          <span className="text-xs text-muted-foreground">
-                            {formatDate((resolution.resolvedAt ?? resolution.createdTime) || null)}
-                          </span>
+                  <>
+                    <div className="space-y-2">
+                      {complaintResolutionHistory.map((resolution) => (
+                        <div key={resolution.id} className="rounded-md border border-border bg-muted/30 p-3 text-sm">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="font-medium text-foreground">{resolution.responseNote || resolution.resolutionNote || "Không có nội dung"}</p>
+                            <span className="text-xs text-muted-foreground">
+                              {formatDate((resolution.resolvedAt ?? resolution.createdTime) || null)}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Người xử lý: {resolution.handlerName || resolution.handlerId || "Không rõ"}
+                          </p>
                         </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Người xử lý: {resolution.handlerName || resolution.handlerId || "Không rõ"}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                    <SimplePagination
+                      pageNumber={complaintResolutionHistoryData?.pageNumber ?? complaintResolutionPageNumber}
+                      pageSize={complaintResolutionHistoryData?.pageSize ?? 10}
+                      totalCount={complaintResolutionHistoryData?.totalCount ?? complaintResolutionHistory.length}
+                      onPageChange={setComplaintResolutionPageNumber}
+                    />
+                  </>
                 )}
               </div>
             </div>

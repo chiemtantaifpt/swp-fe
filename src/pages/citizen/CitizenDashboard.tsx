@@ -1,5 +1,6 @@
 ﻿import { useState, useRef, useMemo, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { CitizenDashboardCharts } from "@/components/dashboard/RoleDashboardCharts";
 import ReportDetailModal from "@/components/ReportDetailModal";
 import MapPicker from "@/components/MapPicker";
 import { useAuth } from "@/contexts/AuthContext";
@@ -24,7 +25,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Plus, MapPin, Clock, Award, Trophy, Star, Camera, TrendingUp, Loader2, ChevronRight, X, Map, Search, AlertTriangle, ChevronDown, ChevronLeft, Leaf, Recycle, Flame, Package, Gift } from "lucide-react";
+import SimplePagination from "@/components/SimplePagination";
+import { Plus, MapPin, Clock, Award, Trophy, Star, Camera, TrendingUp, Loader2, ChevronRight, X, Map, Search, AlertTriangle, ChevronDown, ChevronLeft, Leaf, Recycle, Flame, Package, Gift, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { wasteReportService, WasteReport, CreateWasteReportRequest } from "@/services/wasteReport";
@@ -32,7 +34,7 @@ import { wasteTypeService } from "@/services/wasteType";
 import { imageService } from "@/services/image";
 import { complaintService, Complaint } from "@/services/complaint";
 import { disputeResolutionService } from "@/services/disputeResolution";
-import { useCitizenPoint, useCitizenPointLeaderboard, useCitizenPointMyRank } from "@/hooks/useCitizenPoint";
+import { useCitizenPoint, useCitizenPointHistory, useCitizenPointLeaderboard, useCitizenPointMyRank } from "@/hooks/useCitizenPoint";
 import { useActiveRewards, useMyRewardRedemptions, useRedeemReward } from "@/hooks/reward.hooks";
 import {
   formatWasteQuantityInput,
@@ -149,6 +151,10 @@ const CitizenDashboard = () => {
   const [complaintType, setComplaintType] = useState("Feedback");
   const [complaintContent, setComplaintContent] = useState("");
   const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(null);
+  const [complaintPageNumber, setComplaintPageNumber] = useState(1);
+  const [rewardRedemptionPageNumber, setRewardRedemptionPageNumber] = useState(1);
+  const [pointHistoryPageNumber, setPointHistoryPageNumber] = useState(1);
+  const [selectedComplaintResolutionPageNumber, setSelectedComplaintResolutionPageNumber] = useState(1);
 
   // Táº¡o blob preview URLs 1 láº§n khi imageFiles thay Ä‘á»•i, cleanup Ä‘á»ƒ trÃ¡nh memory leak
   useEffect(() => {
@@ -158,6 +164,10 @@ const CitizenDashboard = () => {
       urls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, [imageFiles]);
+
+  useEffect(() => {
+    setSelectedComplaintResolutionPageNumber(1);
+  }, [selectedComplaint?.id]);
 
   // Multi-select waste type state
   const [selectedWastes, setSelectedWastes] = useState<Array<{ wasteTypeId: string; quantity: number; note: string }>>([]);
@@ -360,8 +370,8 @@ const CitizenDashboard = () => {
   );
 
   const { data: complaintData, isLoading: loadingComplaints } = useQuery({
-    queryKey: ["complaints", "my", user?.id],
-    queryFn: () => complaintService.getMy({ ComplainantId: user?.id, PageNumber: 1, PageSize: 50 }),
+    queryKey: ["complaints", "my", user?.id, complaintPageNumber],
+    queryFn: () => complaintService.getMy({ ComplainantId: user?.id, PageNumber: complaintPageNumber, PageSize: 10 }),
     enabled: !!user?.id,
   });
   const complaints = complaintData?.items ?? [];
@@ -376,18 +386,34 @@ const CitizenDashboard = () => {
     data: rewardRedemptionsData,
     isLoading: rewardRedemptionsLoading,
     isError: rewardRedemptionsError,
-  } = useMyRewardRedemptions(1, 20);
+  } = useMyRewardRedemptions(rewardRedemptionPageNumber, 5);
   const rewardRedemptions = rewardRedemptionsData?.items ?? [];
 
   const {
-    data: selectedComplaintResolutions = [],
+    data: citizenPointHistoryData,
+    isLoading: citizenPointHistoryLoading,
+    isError: citizenPointHistoryError,
+  } = useCitizenPointHistory(user?.id, {
+    pageNumber: pointHistoryPageNumber,
+    pageSize: 5,
+  });
+  const citizenPointHistory = citizenPointHistoryData?.items ?? [];
+
+  const {
+    data: selectedComplaintResolutionsData,
     isLoading: selectedComplaintResolutionsLoading,
     isError: selectedComplaintResolutionsError,
   } = useQuery({
-    queryKey: ["complaintResolutions", selectedComplaint?.id],
-    queryFn: () => disputeResolutionService.getByComplaint(selectedComplaint!.id),
+    queryKey: ["complaintResolutions", selectedComplaint?.id, selectedComplaintResolutionPageNumber],
+    queryFn: () =>
+      disputeResolutionService.getAll({
+        complaintId: selectedComplaint!.id,
+        pageNumber: selectedComplaintResolutionPageNumber,
+        pageSize: 5,
+      }),
     enabled: !!selectedComplaint,
   });
+  const selectedComplaintResolutions = selectedComplaintResolutionsData?.items ?? [];
 
   const resetComplaintForm = () => {
     setComplaintType("Feedback");
@@ -714,8 +740,12 @@ const CitizenDashboard = () => {
         ))}
       </div>
 
-      <Tabs defaultValue="reports">
+      <Tabs defaultValue="dashboard">
         <TabsList className="flex w-full justify-start overflow-x-auto whitespace-nowrap">
+          <TabsTrigger value="dashboard" className="gap-1.5">
+            <BarChart3 className="h-4 w-4" />
+            Biểu đồ
+          </TabsTrigger>
           <TabsTrigger value="reports">Báo cáo của tôi</TabsTrigger>
           <TabsTrigger value="rewards" className="gap-1.5">
             <Gift className="h-4 w-4" />
@@ -731,6 +761,10 @@ const CitizenDashboard = () => {
           </TabsTrigger>
           <TabsTrigger value="leaderboard">Bảng xếp hạng</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="dashboard">
+          <CitizenDashboardCharts />
+        </TabsContent>
 
         <TabsContent value="reports">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1313,61 +1347,144 @@ const CitizenDashboard = () => {
               </Card>
             </div>
 
-            <Card className="shadow-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 font-display text-base">
-                  <Clock className="h-5 w-5 text-primary" /> Lịch sử đổi thưởng
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {rewardRedemptionsLoading ? (
-                  <div className="space-y-3">
-                    {Array.from({ length: 4 }).map((_, index) => (
-                      <Skeleton key={`reward-redemption-skeleton-${index}`} className="h-16 w-full rounded-lg" />
-                    ))}
-                  </div>
-                ) : rewardRedemptionsError ? (
-                  <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
-                    <AlertTriangle className="h-8 w-8 opacity-40" />
-                    <p className="text-sm">Không thể tải lịch sử đổi thưởng.</p>
-                  </div>
-                ) : rewardRedemptions.length === 0 ? (
-                  <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
-                    <Gift className="h-8 w-8 opacity-40" />
-                    <p className="text-sm">Bạn chưa đổi phần thưởng nào.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {rewardRedemptions.map((redemption) => (
-                      <div
-                        key={redemption.id}
-                        className="flex flex-col gap-3 rounded-lg border border-border/70 p-3"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-dashed border-border bg-muted/40">
-                            <Gift className="h-5 w-5 text-muted-foreground/50" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="text-sm font-medium text-foreground">{redemption.rewardName}</p>
-                              <Badge variant="outline">Đã đổi</Badge>
+            <div className="space-y-4">
+              <Card className="shadow-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 font-display text-base">
+                    <Clock className="h-5 w-5 text-primary" /> Lịch sử đổi thưởng
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {rewardRedemptionsLoading ? (
+                    <div className="space-y-3">
+                      {Array.from({ length: 4 }).map((_, index) => (
+                        <Skeleton key={`reward-redemption-skeleton-${index}`} className="h-16 w-full rounded-lg" />
+                      ))}
+                    </div>
+                  ) : rewardRedemptionsError ? (
+                    <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
+                      <AlertTriangle className="h-8 w-8 opacity-40" />
+                      <p className="text-sm">Không thể tải lịch sử đổi thưởng.</p>
+                    </div>
+                  ) : rewardRedemptions.length === 0 ? (
+                    <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
+                      <Gift className="h-8 w-8 opacity-40" />
+                      <p className="text-sm">Bạn chưa đổi phần thưởng nào.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-3">
+                        {rewardRedemptions.map((redemption) => (
+                          <div
+                            key={redemption.id}
+                            className="flex flex-col gap-3 rounded-lg border border-border/70 p-3"
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-dashed border-border bg-muted/40">
+                                <Gift className="h-5 w-5 text-muted-foreground/50" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="text-sm font-medium text-foreground">{redemption.rewardName}</p>
+                                  <Badge variant="outline">Đã đổi</Badge>
+                                </div>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {redemption.createdTime
+                                    ? new Date(redemption.createdTime).toLocaleString("vi-VN")
+                                    : "Chưa rõ thời gian"}
+                                </p>
+                              </div>
+                              <span className="shrink-0 text-sm font-semibold text-primary">
+                                -{redemption.pointCostSnapshot} điểm
+                              </span>
                             </div>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {redemption.createdTime
-                                ? new Date(redemption.createdTime).toLocaleString("vi-VN")
-                                : "Chưa rõ thời gian"}
-                            </p>
                           </div>
-                          <span className="shrink-0 text-sm font-semibold text-primary">
-                            -{redemption.pointCostSnapshot} điểm
-                          </span>
-                        </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                      <SimplePagination
+                        pageNumber={rewardRedemptionPageNumber}
+                        pageSize={rewardRedemptionsData?.pageSize ?? 5}
+                        totalCount={rewardRedemptionsData?.totalCount ?? rewardRedemptions.length}
+                        onPageChange={setRewardRedemptionPageNumber}
+                      />
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 font-display text-base">
+                    <Award className="h-5 w-5 text-primary" /> Lịch sử điểm thưởng
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {citizenPointHistoryLoading ? (
+                    <div className="space-y-3">
+                      {Array.from({ length: 4 }).map((_, index) => (
+                        <Skeleton key={`citizen-point-history-skeleton-${index}`} className="h-16 w-full rounded-lg" />
+                      ))}
+                    </div>
+                  ) : citizenPointHistoryError ? (
+                    <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
+                      <AlertTriangle className="h-8 w-8 opacity-40" />
+                      <p className="text-sm">Không thể tải lịch sử điểm thưởng.</p>
+                    </div>
+                  ) : citizenPointHistory.length === 0 ? (
+                    <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
+                      <Award className="h-8 w-8 opacity-40" />
+                      <p className="text-sm">Bạn chưa có biến động điểm nào.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-3">
+                        {citizenPointHistory.map((historyItem) => (
+                          <div
+                            key={historyItem.id}
+                            className="rounded-lg border border-border/70 p-3"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0 space-y-1">
+                                <p className="text-sm font-medium text-foreground">
+                                  {historyItem.reason?.trim() || historyItem.enterpriseName || "Cập nhật điểm thưởng"}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {historyItem.createdTime
+                                    ? new Date(historyItem.createdTime).toLocaleString("vi-VN")
+                                    : "Chưa rõ thời gian"}
+                                </p>
+                                {(historyItem.source || historyItem.status) && (
+                                  <p className="text-xs text-muted-foreground">
+                                    {[historyItem.source, historyItem.status].filter(Boolean).join(" • ")}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <p className="text-sm font-semibold text-primary">
+                                  {historyItem.points >= 0 ? "+" : ""}
+                                  {historyItem.points} điểm
+                                </p>
+                                {historyItem.balanceAfter != null && (
+                                  <p className="text-xs text-muted-foreground">
+                                    Số dư: {historyItem.balanceAfter} điểm
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <SimplePagination
+                        pageNumber={pointHistoryPageNumber}
+                        pageSize={citizenPointHistoryData?.pageSize ?? 5}
+                        totalCount={citizenPointHistoryData?.totalCount ?? citizenPointHistory.length}
+                        onPageChange={setPointHistoryPageNumber}
+                      />
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </TabsContent>
 
@@ -1390,16 +1507,24 @@ const CitizenDashboard = () => {
               <p className="text-sm text-muted-foreground">Vào tab "Báo cáo của tôi" và bấm "Khiếu nại" trên báo cáo bạn muốn theo dõi.</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {complaints.map((complaint) => (
-                <CitizenComplaintCard
-                  key={complaint.id}
-                  complaint={complaint}
-                  reportSummary={getComplaintReportSummary(complaint)}
-                  onView={setSelectedComplaint}
-                />
-              ))}
-            </div>
+            <>
+              <div className="space-y-3">
+                {complaints.map((complaint) => (
+                  <CitizenComplaintCard
+                    key={complaint.id}
+                    complaint={complaint}
+                    reportSummary={getComplaintReportSummary(complaint)}
+                    onView={setSelectedComplaint}
+                  />
+                ))}
+              </div>
+              <SimplePagination
+                pageNumber={complaintData?.pageNumber ?? complaintPageNumber}
+                pageSize={complaintData?.pageSize ?? 10}
+                totalCount={complaintData?.totalCount ?? complaints.length}
+                onPageChange={setComplaintPageNumber}
+              />
+            </>
           )}
         </TabsContent>
 
@@ -1632,7 +1757,14 @@ const CitizenDashboard = () => {
               </div>
 
               <div className="rounded-lg border border-border p-4">
-                <p className="text-sm font-medium text-foreground">Kết quả xử lý</p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-foreground">Kết quả xử lý</p>
+                  {selectedComplaintResolutionsData?.totalCount ? (
+                    <span className="text-xs text-muted-foreground">
+                      {selectedComplaintResolutionsData.totalCount} mục
+                    </span>
+                  ) : null}
+                </div>
                 {selectedComplaint.status === "EnterpriseResponded" ? (
                   <p className="mt-1 text-sm text-muted-foreground">
                     Doanh nghiệp đã phản hồi khiếu nại này. Khiếu nại hiện đang chờ quản trị viên đưa ra kết quả cuối cùng.
@@ -1646,16 +1778,24 @@ const CitizenDashboard = () => {
                 ) : selectedComplaintResolutions.length === 0 ? (
                   <p className="mt-1 text-sm text-muted-foreground">Chưa có lịch sử xử lý cho khiếu nại này.</p>
                 ) : (
-                  <div className="mt-2 space-y-2">
-                    {selectedComplaintResolutions.map((resolution) => (
-                      <div key={resolution.id} className="rounded-md border border-border bg-muted/30 p-3">
-                        <p className="text-sm text-foreground">{String(resolution.responseNote ?? resolution.resolutionNote ?? "Không có nội dung")}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {new Date(String(resolution.resolvedAt ?? resolution.createdTime ?? selectedComplaint.createdTime)).toLocaleString("vi-VN")}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
+                  <>
+                    <div className="mt-2 space-y-2">
+                      {selectedComplaintResolutions.map((resolution) => (
+                        <div key={resolution.id} className="rounded-md border border-border bg-muted/30 p-3">
+                          <p className="text-sm text-foreground">{String(resolution.responseNote ?? resolution.resolutionNote ?? "Không có nội dung")}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {new Date(String(resolution.resolvedAt ?? resolution.createdTime ?? selectedComplaint.createdTime)).toLocaleString("vi-VN")}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    <SimplePagination
+                      pageNumber={selectedComplaintResolutionsData?.pageNumber ?? selectedComplaintResolutionPageNumber}
+                      pageSize={selectedComplaintResolutionsData?.pageSize ?? 5}
+                      totalCount={selectedComplaintResolutionsData?.totalCount ?? selectedComplaintResolutions.length}
+                      onPageChange={setSelectedComplaintResolutionPageNumber}
+                    />
+                  </>
                 )}
               </div>
 

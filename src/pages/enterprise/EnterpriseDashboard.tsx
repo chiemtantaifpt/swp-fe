@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { EnterpriseDashboardCharts } from "@/components/dashboard/RoleDashboardCharts";
 import EnterpriseProfileSetup from "./EnterpriseProfileSetup";
 import EnterprisePendingApproval from "./EnterprisePendingApproval";
+import SimplePagination from "@/components/SimplePagination";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +47,8 @@ import { dashboardService } from "@/services/dashboard";
 import { wasteTypeService } from "@/services/wasteType";
 import { collectionRequestService, collectorAssignmentService, CollectionRequest, collectorService, Collector, collectorProofService, CollectorProof } from "@/services/collectionRequest";
 import type { Complaint, ComplaintStatus } from "@/services/complaint";
+import { disputeResolutionService } from "@/services/disputeResolution";
+import { useCollectorProfiles } from "@/hooks/useCollectorProfile";
 import { useCreateDisputeResolution, useEnterpriseComplaints } from "@/hooks/useEnterpriseComplaints";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -228,8 +232,19 @@ const EnterpriseDashboard = () => {
   const [selectedProof, setSelectedProof] = useState<CollectorProof | null>(null);
   const [reviewNote, setReviewNote] = useState("");
   const [complaintStatusFilter, setComplaintStatusFilter] = useState<"all" | ComplaintStatus>("all");
+  const [enterpriseComplaintPageNumber, setEnterpriseComplaintPageNumber] = useState(1);
+  const [collectorPageNumber, setCollectorPageNumber] = useState(1);
+  const [complaintResolutionPageNumber, setComplaintResolutionPageNumber] = useState(1);
   const [respondingComplaint, setRespondingComplaint] = useState<Complaint | null>(null);
   const [disputeResponseNote, setDisputeResponseNote] = useState("");
+
+  useEffect(() => {
+    setEnterpriseComplaintPageNumber(1);
+  }, [complaintStatusFilter]);
+
+  useEffect(() => {
+    setComplaintResolutionPageNumber(1);
+  }, [respondingComplaint?.id]);
 
   // ── collection request queries ──
   const { data: offeredData, isLoading: offeredLoading } = useQuery({
@@ -288,8 +303,8 @@ const EnterpriseDashboard = () => {
 
   const complaintParams =
     complaintStatusFilter === "all"
-      ? { pageNumber: 1, pageSize: 50 }
-      : { pageNumber: 1, pageSize: 50, status: complaintStatusFilter };
+      ? { pageNumber: enterpriseComplaintPageNumber, pageSize: 10 }
+      : { pageNumber: enterpriseComplaintPageNumber, pageSize: 10, status: complaintStatusFilter };
 
   const {
     data: enterpriseComplaintsData,
@@ -298,6 +313,22 @@ const EnterpriseDashboard = () => {
 
   const createDisputeResolution = useCreateDisputeResolution();
   const complaintList = enterpriseComplaintsData?.items ?? [];
+
+  const {
+    data: complaintResolutionData,
+    isLoading: complaintResolutionLoading,
+    isError: complaintResolutionError,
+  } = useQuery({
+    queryKey: ["disputeResolutions", "enterprise", respondingComplaint?.id, complaintResolutionPageNumber],
+    queryFn: () =>
+      disputeResolutionService.getAll({
+        complaintId: respondingComplaint!.id,
+        pageNumber: complaintResolutionPageNumber,
+        pageSize: 10,
+      }),
+    enabled: !!respondingComplaint,
+  });
+  const complaintResolutionHistory = complaintResolutionData?.items ?? [];
 
   // ── collection request mutations ──
   const acceptReq = useMutation({
@@ -427,12 +458,25 @@ const EnterpriseDashboard = () => {
     enabled: isApproved,
   });
 
+  const {
+    data: collectorProfilesData,
+    isLoading: collectorProfilesLoading,
+  } = useCollectorProfiles(
+    {
+      pageNumber: collectorPageNumber,
+      pageSize: 9,
+    },
+    isApproved
+  );
+  const collectorProfiles = collectorProfilesData?.items ?? [];
+
   const createCollector = useMutation({
     mutationFn: () => collectorService.create({ email: colEmail.trim(), password: colPassword, fullName: colFullName.trim() }),
     onSuccess: () => {
       toast.success("Đã tạo collector thành công");
       setCollectorDialog(false); setColEmail(""); setColPassword(""); setColFullName("");
       qc.invalidateQueries({ queryKey: ["myCollectors"] });
+      qc.invalidateQueries({ queryKey: ["collectorProfiles"] });
     },
     onError: () => toast.error("Tạo collector thất bại"),
   });
@@ -593,7 +637,7 @@ const EnterpriseDashboard = () => {
   return (
     <DashboardLayout>
       <div className="mb-6">
-        <h1 className="font-display text-2xl font-bold text-foreground">Dashboard Doanh nghiệp</h1>
+        <h1 className="font-display text-2xl font-bold text-foreground">Bảng điều khiển doanh nghiệp</h1>
         <p className="text-sm text-muted-foreground">Quản lý yêu cầu thu gom và điều phối collector</p>
       </div>
 
@@ -657,8 +701,12 @@ const EnterpriseDashboard = () => {
         )}
       </div>
 
-      <Tabs defaultValue="requests">
+      <Tabs defaultValue="dashboard">
         <TabsList className="flex w-full justify-start overflow-x-auto whitespace-nowrap">
+          <TabsTrigger value="dashboard" className="gap-1.5">
+            <BarChart3 className="h-4 w-4" />
+            Biểu đồ
+          </TabsTrigger>
           <TabsTrigger value="requests">Yêu cầu thu gom</TabsTrigger>
           <TabsTrigger value="complaints">Khiếu nại</TabsTrigger>
           <TabsTrigger value="proofs" className="gap-1.5">
@@ -668,7 +716,7 @@ const EnterpriseDashboard = () => {
               <Badge className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-xs leading-none">{pendingProofsCount}</Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="collectors">Collectors</TabsTrigger>
+          <TabsTrigger value="collectors">Nhân sự thu gom</TabsTrigger>
           <TabsTrigger value="stats">Thống kê</TabsTrigger>
           <TabsTrigger value="config" className="gap-1.5">
             <Settings className="h-4 w-4" />
@@ -677,6 +725,10 @@ const EnterpriseDashboard = () => {
         </TabsList>
 
         {/* ── Tab: Yêu cầu ── */}
+        <TabsContent value="dashboard">
+          <EnterpriseDashboardCharts />
+        </TabsContent>
+
         <TabsContent value="requests">
           <Tabs value={reqStatusTab} onValueChange={(v) => setReqStatusTab(v as typeof reqStatusTab)}>
             <TabsList className="mb-4 flex w-full justify-start overflow-x-auto whitespace-nowrap">
@@ -846,7 +898,8 @@ const EnterpriseDashboard = () => {
                   <p className="text-sm">Không có khiếu nại nào phù hợp bộ lọc hiện tại</p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <>
+                  <div className="space-y-3">
                   {complaintList.map((complaint: Complaint) => {
                     const meta = COMPLAINT_STATUS_META[complaint.status as ComplaintStatus] ?? {
                       label: complaint.status,
@@ -896,7 +949,14 @@ const EnterpriseDashboard = () => {
                       </Card>
                     );
                   })}
-                </div>
+                  </div>
+                  <SimplePagination
+                    pageNumber={enterpriseComplaintsData?.pageNumber ?? enterpriseComplaintPageNumber}
+                    pageSize={enterpriseComplaintsData?.pageSize ?? 10}
+                    totalCount={enterpriseComplaintsData?.totalCount ?? complaintList.length}
+                    onPageChange={setEnterpriseComplaintPageNumber}
+                  />
+                </>
               )}
             </CardContent>
           </Card>
@@ -1005,13 +1065,15 @@ const EnterpriseDashboard = () => {
         {/* ── Tab: Collectors ── */}
         <TabsContent value="collectors">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">{collectors.length} collector</p>
+            <p className="text-sm text-muted-foreground">
+              {collectorProfilesData?.totalCount ?? collectorProfiles.length} collector
+            </p>
             <Button size="sm" onClick={() => setCollectorDialog(true)}>
               <Plus className="mr-1 h-4 w-4" /> Thêm collector
             </Button>
           </div>
 
-          {collectorsLoading ? (
+          {collectorsLoading || collectorProfilesLoading ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {Array.from({ length: 3 }).map((_, i) => (
                 <Card key={i} className="shadow-card">
@@ -1023,7 +1085,7 @@ const EnterpriseDashboard = () => {
                 </Card>
               ))}
             </div>
-          ) : collectors.length === 0 ? (
+          ) : collectorProfiles.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
               <AlertCircle className="h-10 w-10 opacity-40" />
               <p className="text-sm">Chưa có collector nào</p>
@@ -1032,14 +1094,15 @@ const EnterpriseDashboard = () => {
               </Button>
             </div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {collectors.map((c: Collector) => (
-                <Card key={c.userId} className="shadow-card">
+            <>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {collectorProfiles.map((c) => (
+                  <Card key={c.id} className="shadow-card">
                   <CardContent className="p-4">
                     <div className="mb-3 flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-foreground">{c.fullName}</p>
-                        <p className="truncate text-xs text-muted-foreground">{c.email}</p>
+                        <p className="truncate font-medium text-foreground">{c.collectorName}</p>
+                        <p className="truncate text-xs text-muted-foreground">{c.collectorEmail}</p>
                       </div>
                       <Badge variant={c.isActive ? "default" : "secondary"} className="shrink-0 text-xs">
                         {c.isActive ? "Hoạt động" : "Khóa"}
@@ -1056,6 +1119,13 @@ const EnterpriseDashboard = () => {
                 </Card>
               ))}
             </div>
+              <SimplePagination
+                pageNumber={collectorProfilesData?.pageNumber ?? collectorPageNumber}
+                pageSize={collectorProfilesData?.pageSize ?? 9}
+                totalCount={collectorProfilesData?.totalCount ?? collectorProfiles.length}
+                onPageChange={setCollectorPageNumber}
+              />
+            </>
           )}
         </TabsContent>
 
@@ -1814,15 +1884,25 @@ const EnterpriseDashboard = () => {
               <div className="space-y-3 rounded-lg border p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <h3 className="font-medium text-foreground">Lịch sử phản hồi</h3>
-                  <Badge variant="outline">{respondingComplaint.resolutions.length} phản hồi</Badge>
+                  <Badge variant="outline">
+                    {complaintResolutionData?.totalCount ?? complaintResolutionHistory.length} phản hồi
+                  </Badge>
                 </div>
-                {respondingComplaint.resolutions.length === 0 ? (
+                {complaintResolutionLoading ? (
+                  <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                    Đang tải lịch sử phản hồi...
+                  </div>
+                ) : complaintResolutionError ? (
+                  <div className="rounded-md border border-dashed p-4 text-sm text-destructive">
+                    Không thể tải lịch sử phản hồi cho khiếu nại này.
+                  </div>
+                ) : complaintResolutionHistory.length === 0 ? (
                   <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
                     Chưa có phản hồi nào cho khiếu nại này.
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {respondingComplaint.resolutions.map((resolution) => (
+                    {complaintResolutionHistory.map((resolution) => (
                       <div key={resolution.id} className="rounded-md border bg-muted/20 p-3">
                         <p className="text-sm font-medium text-foreground">
                           {resolution.responseNote || resolution.resolutionNote || "Không có nội dung"}
@@ -1832,6 +1912,12 @@ const EnterpriseDashboard = () => {
                         </p>
                       </div>
                     ))}
+                    <SimplePagination
+                      pageNumber={complaintResolutionData?.pageNumber ?? complaintResolutionPageNumber}
+                      pageSize={complaintResolutionData?.pageSize ?? 10}
+                      totalCount={complaintResolutionData?.totalCount ?? complaintResolutionHistory.length}
+                      onPageChange={setComplaintResolutionPageNumber}
+                    />
                   </div>
                 )}
               </div>
