@@ -12,7 +12,13 @@ import { Separator } from "@/components/ui/separator";
 import { Truck, MapPin, Clock, CheckCircle, Package, Navigation, AlertCircle, Image as ImageIcon, Eye, ExternalLink, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { collectorAssignmentService, collectorProofService, CollectorAssignment, PagedAssignmentResult } from "@/services/collectionRequest";
+import {
+  collectorAssignmentService,
+  collectorProofService,
+  CollectorAssignment,
+  CollectorProofDetail,
+  PagedAssignmentResult,
+} from "@/services/collectionRequest";
 import { imageService } from "@/services/image";
 
 // ─── Step helpers ────────────────────────────────────────────────────
@@ -209,6 +215,23 @@ const CollectorDashboard = () => {
   const selectedAssignmentMapsUrl = selectedAssignment
     ? getAssignmentMapsUrl(selectedAssignment)
     : null;
+  const { data: selectedAssignmentProofsData, isLoading: selectedAssignmentProofsLoading } = useQuery({
+    queryKey: ["collectorProofs", "collector", selectedAssignment?.id],
+    queryFn: () =>
+      collectorProofService.getForCollector({
+        AssignmentId: selectedAssignment!.id,
+        PageNumber: 1,
+        PageSize: 10,
+      }),
+    enabled: !!selectedAssignment,
+  });
+  const selectedAssignmentProof: CollectorProofDetail | null =
+    selectedAssignmentProofsData?.items?.[0] ?? null;
+  const citizenReportImages =
+    selectedAssignmentProof?.imageUrl
+      ? [selectedAssignmentProof.imageUrl]
+      : selectedAssignment?.imageUrls ?? [];
+  const collectorProofImages = selectedAssignmentProof?.imageUrls ?? [];
 
   return (
     <DashboardLayout>
@@ -484,20 +507,73 @@ const CollectorDashboard = () => {
                 </div>
               )}
 
-              {(selectedAssignment.imageUrls ?? []).length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-foreground">Ảnh từ báo cáo</p>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {(selectedAssignment.imageUrls ?? []).map((url, index) => (
-                      <a key={index} href={url} target="_blank" rel="noreferrer">
-                        <img
-                          src={url}
-                          alt={`Ảnh đơn ${index + 1}`}
-                          className="h-36 w-full rounded-lg border object-cover transition-opacity hover:opacity-85"
-                        />
-                      </a>
-                    ))}
-                  </div>
+              {(selectedAssignmentProofsLoading || citizenReportImages.length > 0 || collectorProofImages.length > 0 || selectedAssignmentProof?.note) && (
+                <div className="space-y-4">
+                  {selectedAssignmentProofsLoading ? (
+                    <div className="space-y-2">
+                      <Skeleton className="h-4 w-36" />
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <Skeleton className="h-36 w-full rounded-lg" />
+                        <Skeleton className="h-36 w-full rounded-lg" />
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {citizenReportImages.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-foreground">Ảnh báo cáo của citizen</p>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {citizenReportImages.map((url, index) => (
+                              <a key={`citizen-${index}`} href={url} target="_blank" rel="noreferrer">
+                                <img
+                                  src={url}
+                                  alt={`Ảnh citizen ${index + 1}`}
+                                  className="h-36 w-full rounded-lg border object-cover transition-opacity hover:opacity-85"
+                                />
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {collectorProofImages.length > 0 && (
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-medium text-foreground">Ảnh collector xác nhận thu gom</p>
+                            {selectedAssignmentProof?.reviewStatus && (
+                              <Badge variant="outline">
+                                {selectedAssignmentProof.reviewStatus === "Approved"
+                                  ? "Đã duyệt"
+                                  : selectedAssignmentProof.reviewStatus === "Rejected"
+                                    ? "Bị từ chối"
+                                    : "Chờ duyệt"}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {collectorProofImages.map((url, index) => (
+                              <a key={`proof-${index}`} href={url} target="_blank" rel="noreferrer">
+                                <img
+                                  src={url}
+                                  alt={`Ảnh collector ${index + 1}`}
+                                  className="h-36 w-full rounded-lg border object-cover transition-opacity hover:opacity-85"
+                                />
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedAssignmentProof?.note && (
+                        <div className="rounded-lg border p-3">
+                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Ghi chú proof
+                          </p>
+                          <p className="mt-1 text-foreground">{selectedAssignmentProof.note}</p>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
             </div>

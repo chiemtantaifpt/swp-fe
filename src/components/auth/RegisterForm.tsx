@@ -7,20 +7,25 @@ import { useAuth, UserRole } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { districtService, wardService } from "@/services/enterpriseConfig";
 
 type FieldErrors = Partial<
-  Record<
-    | "name"
-    | "phone"
-    | "email"
-    | "password"
-    | "confirmPassword",
-    string
-  >
+  Record<"name" | "phone" | "email" | "password" | "confirmPassword", string>
 >;
 
 export default function RegisterForm() {
@@ -73,20 +78,26 @@ export default function RegisterForm() {
 
   const validate = () => {
     const nextErrors: FieldErrors = {};
+
     if (!name.trim()) nextErrors.name = "Vui lòng nhập họ tên";
     if (!phone.trim()) nextErrors.phone = "Vui lòng nhập số điện thoại";
     else if (!/^(0|\+84)\d{9}$/.test(phone.replace(/\s/g, ""))) {
       nextErrors.phone = "Số điện thoại không hợp lệ (VD: 0901234567)";
     }
+
     if (!email.trim()) nextErrors.email = "Vui lòng nhập email";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       nextErrors.email = "Email không đúng định dạng";
     }
+
     if (!password) nextErrors.password = "Vui lòng nhập mật khẩu";
     else if (password.length < 6) nextErrors.password = "Tối thiểu 6 ký tự";
     else if (!/\d/.test(password)) nextErrors.password = "Phải chứa ít nhất 1 chữ số";
+
     if (!confirmPassword) nextErrors.confirmPassword = "Vui lòng xác nhận mật khẩu";
-    else if (password !== confirmPassword) nextErrors.confirmPassword = "Mật khẩu không trùng khớp";
+    else if (password !== confirmPassword) {
+      nextErrors.confirmPassword = "Mật khẩu không trùng khớp";
+    }
 
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -98,7 +109,7 @@ export default function RegisterForm() {
 
     setLoading(true);
     try {
-      await register(
+      const response = await register(
         name,
         phone,
         email,
@@ -111,8 +122,20 @@ export default function RegisterForm() {
             }
           : undefined
       );
-      toast.success("Đăng ký thành công! Vui lòng kiểm tra email để xác thực tài khoản.");
-      navigate("/login");
+
+      toast.success(
+        response.message || "Đăng ký thành công. Vui lòng kiểm tra email để xác thực tài khoản."
+      );
+
+      navigate("/register/check-email", {
+        state: {
+          email: response.data.email,
+          fullName: response.data.fullName,
+          role: response.data.role,
+          requireEmailVerification: response.data.requireEmailVerification,
+          message: response.data.message || response.message,
+        },
+      });
     } catch (error) {
       const msg =
         error instanceof Error ? error.message : "Đăng ký thất bại. Vui lòng thử lại!";
@@ -253,7 +276,9 @@ export default function RegisterForm() {
                 }}
                 disabled={loading}
                 className={`h-10 border-white/45 bg-white/45 pr-10 text-sm transition-shadow placeholder:text-muted-foreground/80 focus-visible:ring-2 focus-visible:ring-primary/40 md:h-9 ${
-                  errors.confirmPassword ? "border-destructive focus-visible:ring-destructive/50" : ""
+                  errors.confirmPassword
+                    ? "border-destructive focus-visible:ring-destructive/50"
+                    : ""
                 }`}
                 autoComplete="new-password"
               />
@@ -379,7 +404,11 @@ export default function RegisterForm() {
                       disabled={loading || !districtId}
                     >
                       <SelectTrigger className="h-10 border-white/45 bg-white/45 text-sm focus:ring-2 focus:ring-primary/40 md:h-9">
-                        <SelectValue placeholder={districtId ? "Chọn phường/xã" : "Chọn quận/huyện trước"} />
+                        <SelectValue
+                          placeholder={
+                            districtId ? "Chọn phường/xã" : "Chọn quận/huyện trước"
+                          }
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {filteredWards.map((ward) => (

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { authService } from "@/services/auth";
-import type { EnterpriseInfo } from "@/services/auth";
+import type { RegisterResponse } from "@/services/auth.types";
 import queryClient from "@/lib/queryClient";
 import { userProfileService } from "@/services/userProfile";
 
@@ -26,7 +26,7 @@ interface AuthContextType {
     password: string,
     role: UserRole,
     location?: { districtId?: string; wardId?: string }
-  ) => Promise<boolean>;
+  ) => Promise<RegisterResponse>;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
   loading: boolean;
@@ -112,8 +112,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   ) => {
     setLoading(true);
     try {
-      await authService.register(fullName, phone, email, password, role, undefined, location);
-      return true;
+      return await authService.register(
+        fullName,
+        phone,
+        email,
+        password,
+        role,
+        undefined,
+        location
+      );
     } finally {
       setLoading(false);
     }

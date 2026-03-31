@@ -17,6 +17,12 @@ import { wasteTypeService } from "@/services/wasteType";
 import { imageService } from "@/services/image";
 import { RejectionReason, WasteItem, WasteReport, WasteReportStatus, wasteReportService } from "@/services/wasteReport";
 import { useQuery } from "@tanstack/react-query";
+import {
+  formatWasteQuantityInput,
+  getWasteQuantityListValidationError,
+  hasInvalidWasteQuantity,
+  parseWasteQuantityInput,
+} from "@/lib/reportQuantity";
 
 interface Props {
   report: WasteReport | null;
@@ -156,7 +162,8 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
   // Determine why the button is disabled
   const getButtonDisabledReason = () => {
     if (isUpdatingNoEnterprise) return "Đang gửi báo cáo...";
-    if (selectedWastes.some((w) => !w.quantity || w.quantity <= 0)) return "Vui lòng nhập số lượng > 0 cho tất cả loại rác";
+    const quantityError = getWasteQuantityListValidationError(selectedWastes);
+    if (quantityError) return quantityError;
     if (!isEditDirty) return "Chưa có thay đổi nào để lưu";
     return null;
   };
@@ -256,7 +263,7 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
     if (selectedWastes.length === 0) {
       return;
     }
-    if (selectedWastes.some((w) => !w.quantity || w.quantity <= 0)) {
+    if (hasInvalidWasteQuantity(selectedWastes)) {
       return;
     }
     if (imagePreviewUrls.length === 0) {
@@ -798,13 +805,14 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
                             <Label className="text-xs">Số lượng (kg) *</Label>
                             <Input
                               type="number"
-                              min="1"
-                              step="1"
+                              inputMode="decimal"
+                              min="0.01"
+                              step="0.01"
                               className="mt-1 h-8 text-sm"
                               placeholder="Ví dụ: 10"
-                              value={waste.quantity}
+                              value={formatWasteQuantityInput(waste.quantity)}
                               onChange={(e) => {
-                                const qty = parseInt(e.target.value) || 1;
+                                const qty = parseWasteQuantityInput(e.target.value);
                                 setSelectedWastes((prev) =>
                                   prev.map((w, i) => (i === index ? { ...w, quantity: qty } : w))
                                 );
@@ -940,7 +948,7 @@ export default function ReportDetailModal({ report, open, onClose, onCancel, isC
           {/* Validation hints */}
           <div className="space-y-0.5 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
             {selectedWastes.length === 0 && <li>• Chọn ít nhất 1 loại rác</li>}
-            {selectedWastes.some((w) => !w.quantity || w.quantity <= 0) && <li>• Nhập số lượng &gt; 0 cho tất cả loại rác</li>}
+            {hasInvalidWasteQuantity(selectedWastes) && <li>• Nhập khối lượng hợp lệ cho tất cả loại rác (&gt; 0 kg, tối đa 2 số lẻ)</li>}
             {imagePreviewUrls.length === 0 && <li>• Thêm ít nhất 1 ảnh</li>}
             {!editForm.latitude && <li>• Xác định vị trí GPS</li>}
           </div>

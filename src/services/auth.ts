@@ -1,49 +1,42 @@
-import api from "./api";
-import { User, UserRole } from "@/contexts/AuthContext";
 import { AxiosError } from "axios";
 import { jwtDecode } from "jwt-decode";
+import { User } from "@/contexts/AuthContext";
+import api from "./api";
 import type { BaseResponse } from "./baseResponse";
+import {
+  AuthApiError,
+  type AuthTokenResponse,
+  type EnterpriseInfo,
+  type ParsedVerifyEmailResult,
+  type RegisterResponse,
+  type UserRole,
+  type VerifyEmailResponse,
+} from "./auth.types";
 
-export interface LoginRequest {
-  email: string;
-  password: string;
-}
-
-export interface RegisterRequest {
-  fullName: string;
-  phone: string;
-  email: string;
-  password: string;
-  role: UserRole;
-  wardId?: string;
-  districtId?: string;
-}
-
-// Actual backend response shape — BE wraps data: { data: { accessToken, ... } }
-export interface AuthResponse {
-  accessToken: string;
-  refreshToken: string;
-  expiredAt: string;
-}
+export type {
+  AuthTokenResponse as AuthResponse,
+  EnterpriseInfo,
+  ParsedVerifyEmailResult,
+  UserRole,
+  VerifyEmailNextStep,
+} from "./auth.types";
 
 interface WrappedAuthResponse {
-  data?: AuthResponse;
+  data?: AuthTokenResponse;
   accessToken?: string;
   refreshToken?: string;
   expiredAt?: string;
 }
 
-// JWT payload shape từ backend
 interface JwtPayload {
   sub: string;
   email?: string;
   "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"?: string;
   "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"?: string;
-  role?: string; 
+  role?: string;
   exp: number;
 }
 
-// Decode JWT để lấy id và email cơ bản
 function decodeToken(token: string): { id: string; email: string; role: string } {
   const payload = jwtDecode<JwtPayload>(token);
 
@@ -64,7 +57,6 @@ function decodeToken(token: string): { id: string; email: string; role: string }
   };
 }
 
-// Map BE error keys sang tiếng Việt
 const PASSWORD_ERROR_MAP: Record<string, string> = {
   PasswordTooShort: "Mật khẩu phải có ít nhất 6 ký tự",
   PasswordRequiresDigit: "Mật khẩu phải có ít nhất 1 chữ số (0-9)",
@@ -76,111 +68,154 @@ const PASSWORD_ERROR_MAP: Record<string, string> = {
   InvalidEmail: "Email không hợp lệ",
 };
 
-// Parse lỗi từ backend thành string tiếng Việt
-function parseBackendError(error: AxiosError): string {
-  const data = error.response?.data as {
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const mapAuthErrorMessage = (
+  error: AxiosError<{
     code?: string;
     message?: { Key: string; Value: string[] }[] | string | null;
     errorMessage?: Record<string, string[]>;
     detail?: string;
-    statusCode?: number;
-  } | undefined;
+  }>
+): AuthApiError => {
+  const data = error.response?.data;
 
-  if (!data) return "Đã xảy ra lỗi. Vui lòng thử lại!";
+  if (!data) {
+    return new AuthApiError("Đã xảy ra lỗi. Vui lòng thử lại!", {
+      code: "unknown_error",
+      status: error.response?.status,
+    });
+  }
 
-  // Format: { message: [{Key: "...", Value: ["..."]}] } — validation errors
   if (Array.isArray(data.message)) {
     const msgs = data.message
       .map((item) => PASSWORD_ERROR_MAP[item.Key] || item.Value?.[0] || item.Key)
       .filter(Boolean);
-    if (msgs.length > 0) return msgs.join("\n");
+
+    if (msgs.length > 0) {
+      return new AuthApiError(msgs.join("\n"), {
+        code: "validation_error",
+        status: error.response?.status,
+      });
+    }
   }
 
-  // Format: { errorMessage: { Key: ["..."] } }
   if (data.errorMessage && typeof data.errorMessage === "object") {
     const msgs = Object.entries(data.errorMessage)
       .map(([key, values]) => PASSWORD_ERROR_MAP[key] || values?.[0] || key)
       .filter(Boolean);
-    if (msgs.length > 0) return msgs.join("\n");
+
+    if (msgs.length > 0) {
+      return new AuthApiError(msgs.join("\n"), {
+        code: "validation_error",
+        status: error.response?.status,
+        details: data.errorMessage,
+      });
+    }
   }
 
-  // Format: message là string
-  if (typeof data.message === "string" && data.message) {
-    return data.message;
+  const message = typeof data.message === "string" ? data.message : "";
+  const normalized = message.toLowerCase();
+  const backendCode = data.code?.toLowerCase();
+
+  if (backendCode === "email_not_confirmed" || normalized.includes("email_not_confirmed")) {
+    return new AuthApiError(
+      "Email của bạn chưa được xác thực. Vui lòng kiểm tra hộp thư và bấm vào liên kết xác thực trước khi đăng nhập.",
+      {
+        code: "email_not_confirmed",
+        status: error.response?.status,
+      }
+    );
   }
 
-  // Status code specific messages
-  if (error.response?.status === 400) return "Email đã tồn tại hoặc thông tin không hợp lệ";
-  if (error.response?.status === 401) return "Email hoặc mật khẩu không đúng";
+  if (
+    normalized.includes("already verified") ||
+    normalized.includes("already confirmed") ||
+    normalized.includes("đã được xác thực") ||
+    normalized.includes("đã xác thực")
+  ) {
+    return new AuthApiError("Email này đã được xác thực trước đó.", {
+      code: "already_verified",
+      status: error.response?.status,
+    });
+  }
+
+  if (
+    normalized.includes("invalid token") ||
+    normalized.includes("token is invalid") ||
+    normalized.includes("token expired") ||
+    normalized.includes("liên kết xác thực không hợp lệ") ||
+    normalized.includes("liên kết xác thực đã hết hạn")
+  ) {
+    return new AuthApiError("Liên kết xác thực không hợp lệ hoặc đã hết hạn.", {
+      code: "invalid_token",
+      status: error.response?.status,
+    });
+  }
+
+  if (message) {
+    return new AuthApiError(message, {
+      code: data.code || "unknown_error",
+      status: error.response?.status,
+    });
+  }
+
+  if (error.response?.status === 400) {
+    return new AuthApiError("Thông tin gửi lên không hợp lệ.", {
+      code: "validation_error",
+      status: error.response.status,
+    });
+  }
+
+  if (error.response?.status === 401) {
+    return new AuthApiError("Email hoặc mật khẩu không đúng.", {
+      code: "unknown_error",
+      status: error.response.status,
+    });
+  }
+
   if (error.response?.status === 500) {
-    // Log chi tiết lỗi server để debug
     if (data.detail) console.error("[Backend 500]", data.detail);
-    return "Lỗi server. Vui lòng liên hệ quản trị viên!";
+    return new AuthApiError("Lỗi server. Vui lòng thử lại sau.", {
+      code: "unknown_error",
+      status: error.response.status,
+    });
   }
 
-  return "Đã xảy ra lỗi. Vui lòng thử lại!";
-}
+  return new AuthApiError("Đã xảy ra lỗi. Vui lòng thử lại!", {
+    code: "unknown_error",
+    status: error.response?.status,
+  });
+};
 
-export interface EnterpriseInfo {
-  enterpriseName: string;
-  taxCode: string;
-  address: string;
-  legalRepresentative: string;
-  representativePosition: string;
-  environmentLicenseFileId?: string;
-}
-
-export type VerifyEmailNextStep =
-  | "Login"
-  | "CompleteEnterpriseProfile"
-  | "WaitForApproval"
-  | string;
-
-export interface VerifyEmailResponse {
-  message: string | null;
-  nextStep: VerifyEmailNextStep;
-}
-
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
-
-const normalizeVerifyEmailResponse = (
-  value: unknown
-): VerifyEmailResponse => {
+const normalizeVerifyEmailResponse = (value: VerifyEmailResponse | BaseResponse<unknown>): ParsedVerifyEmailResult => {
   const root = isObject(value) ? value : {};
-  const payload =
-    "data" in root && isObject(root.data) ? root.data : root;
+  const payload = "data" in root && isObject(root.data) ? root.data : {};
 
-  const rootMessage =
-    typeof root.message === "string" ? root.message : null;
-  const payloadMessage =
-    isObject(payload) && typeof payload.message === "string"
-      ? payload.message
-      : null;
-  const nextStep =
-    isObject(payload) && typeof payload.nextStep === "string"
-      ? payload.nextStep
-      : "Login";
+  const rootMessage = typeof root.message === "string" ? root.message : null;
+  const payloadMessage = typeof payload.message === "string" ? payload.message : null;
 
   return {
+    succeeded: typeof payload.succeeded === "boolean" ? payload.succeeded : true,
+    email: typeof payload.email === "string" ? payload.email : null,
+    role: typeof payload.role === "string" ? payload.role : null,
     message: payloadMessage ?? rootMessage,
-    nextStep,
+    nextStep: typeof payload.nextStep === "string" ? payload.nextStep : "Login",
   };
 };
 
 export const authService = {
-  login: async (email: string, password: string): Promise<AuthResponse> => {
+  login: async (email: string, password: string): Promise<AuthTokenResponse> => {
     try {
       const response = await api.post<WrappedAuthResponse>("/auth/login", {
         email,
         password,
       });
-      // BE có thể trả { data: { accessToken } } hoặc { accessToken } trực tiếp
-      const payload = response.data?.data ?? (response.data as unknown as AuthResponse);
+      const payload = response.data?.data ?? (response.data as unknown as AuthTokenResponse);
       return payload;
     } catch (error) {
-      const msg = parseBackendError(error as AxiosError);
-      throw new Error(msg);
+      throw mapAuthErrorMessage(error as AxiosError);
     }
   },
 
@@ -192,9 +227,9 @@ export const authService = {
     role: UserRole,
     enterpriseInfo?: EnterpriseInfo,
     location?: { districtId?: string; wardId?: string }
-  ): Promise<AuthResponse> => {
+  ) => {
     try {
-      const response = await api.post<AuthResponse>("/auth/register", {
+      const response = await api.post<RegisterResponse>("/auth/register", {
         fullName,
         phone,
         email,
@@ -204,27 +239,24 @@ export const authService = {
         ...(location?.wardId ? { wardId: location.wardId } : {}),
         ...(enterpriseInfo ? { enterpriseInfo } : {}),
       });
+
       return response.data;
     } catch (error) {
-      const msg = parseBackendError(error as AxiosError);
-      throw new Error(msg);
+      throw mapAuthErrorMessage(error as AxiosError);
     }
   },
 
   verifyEmail: async (
     userId: string,
     token: string
-  ): Promise<VerifyEmailResponse> => {
+  ): Promise<ParsedVerifyEmailResult> => {
     try {
-      const response = await api.get<
-        VerifyEmailResponse | BaseResponse<VerifyEmailResponse>
-      >("/auth/verify-email", {
+      const response = await api.get<VerifyEmailResponse>("/auth/verify-email", {
         params: { userId, token },
       });
       return normalizeVerifyEmailResponse(response.data);
     } catch (error) {
-      const msg = parseBackendError(error as AxiosError);
-      throw new Error(msg);
+      throw mapAuthErrorMessage(error as AxiosError);
     }
   },
 
@@ -232,7 +264,7 @@ export const authService = {
     const decoded = decodeToken(token);
 
     if (!decoded.role) {
-      console.warn("JWT payload không có role (kiểm tra lại BE claim role).");
+      console.warn("JWT payload không có role, đang dùng Citizen làm fallback.");
     }
 
     return {
@@ -242,15 +274,4 @@ export const authService = {
       role: (decoded.role || "Citizen") as UserRole,
     };
   },
-
-  buildUserFromRegister: (token: string, fullName: string, role: UserRole): User => {
-    const decoded = decodeToken(token);
-    return {
-      id: decoded.id,
-      email: decoded.email,
-      name: fullName,
-      role,
-    };
-  },
-
 };

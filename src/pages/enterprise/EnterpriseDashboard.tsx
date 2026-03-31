@@ -15,14 +15,33 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
+import {
   Package, Truck, Users, BarChart3, CheckCircle, XCircle,
   Clock, MapPin, Settings, Plus, Pencil, Trash2, Search,
   MapPinned, Recycle, AlertCircle, Eye, EyeOff, Image as ImageIcon, ShieldCheck,
 } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { serviceAreaService, wasteCapabilityService, recyclingEnterpriseService, districtService, wardService } from "@/services/enterpriseConfig";
+import { dashboardService } from "@/services/dashboard";
 import { wasteTypeService } from "@/services/wasteType";
 import { collectionRequestService, collectorAssignmentService, CollectionRequest, collectorService, Collector, collectorProofService, CollectorProof } from "@/services/collectionRequest";
 import type { Complaint, ComplaintStatus } from "@/services/complaint";
@@ -71,6 +90,25 @@ const COMPLAINT_TYPE_LABEL: Record<string, string> = {
   Complaint: "Khiếu nại",
   Feedback: "Góp ý",
 };
+
+const enterpriseCapacityChartConfig = {
+  dailyCapacity: { label: "Công suất ngày", color: "#6fcf97" },
+  assignedToday: { label: "Đã gán hôm nay", color: "#3f8c7a" },
+  remaining: { label: "Còn lại", color: "#b8f28c" },
+} satisfies ChartConfig;
+
+const enterpriseCollectedByMonthChartConfig = {
+  value: { label: "Khối lượng", color: "#3f8c7a" },
+} satisfies ChartConfig;
+
+const enterpriseCollectedByWasteTypeChartConfig = {
+  value: { label: "Khối lượng", color: "#3f8c7a" },
+} satisfies ChartConfig;
+
+const PIE_COLORS = ["#3f8c7a", "#6fcf97", "#b8f28c", "#6eb7bf", "#a7f3d0", "#86efac"];
+
+const formatMetric = (value: number, unit?: string) =>
+  `${value.toLocaleString("vi-VN")}${unit ? ` ${unit}` : ""}`;
 
 const ProofCard = ({
   p,
@@ -219,6 +257,16 @@ const EnterpriseDashboard = () => {
   const acceptedCount  = acceptedData?.totalCount  ?? 0;
   const assignedCount  = assignedData?.totalCount  ?? 0;
   const completedCount = completedData?.totalCount ?? 0;
+
+  const {
+    data: enterpriseDashboard,
+    isLoading: enterpriseDashboardLoading,
+    isError: enterpriseDashboardError,
+  } = useQuery({
+    queryKey: ["enterpriseDashboard"],
+    queryFn: () => dashboardService.getEnterprise(),
+    enabled: isApproved,
+  });
 
   // ── collector proof queries (enterprise) ──
   const { data: pendingProofsData,  isLoading: pendingProofsLoading  } = useQuery({
@@ -550,25 +598,63 @@ const EnterpriseDashboard = () => {
       </div>
 
       {/* Stats */}
-      <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          { icon: Package,      label: "Chờ phản hồi",  value: String(offeredCount),   color: "bg-eco-light"  },
-          { icon: CheckCircle,  label: "Đã tiếp nhận",  value: String(acceptedCount),  color: "bg-eco-medium" },
-          { icon: Truck,        label: "Đang thu gom",  value: String(assignedCount),  color: "bg-eco-teal"   },
-          { icon: BarChart3,    label: "Hoàn thành",    value: String(completedCount), color: "bg-eco-light"  },
-        ].map((s, i) => (
-          <Card key={i} className="shadow-card">
-            <CardContent className="flex items-center gap-4 p-4">
-              <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${s.color}`}>
-                <s.icon className="h-6 w-6 text-eco-dark" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">{s.label}</p>
-                <p className="font-display text-2xl font-bold text-foreground">{s.value}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        {enterpriseDashboardLoading ? (
+          Array.from({ length: 5 }).map((_, index) => (
+            <Card key={`enterprise-dashboard-skeleton-${index}`} className="shadow-card">
+              <CardContent className="space-y-3 p-4">
+                <Skeleton className="h-10 w-10 rounded-xl" />
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-8 w-24" />
+              </CardContent>
+            </Card>
+          ))
+        ) : (
+          [
+            {
+              icon: Package,
+              label: "Tổng công suất hôm nay",
+              value: formatMetric(enterpriseDashboard?.summary.todayTotalCapacity ?? 0, "kg"),
+              color: "bg-eco-light",
+            },
+            {
+              icon: CheckCircle,
+              label: "Đơn đã gán hôm nay",
+              value: formatMetric(enterpriseDashboard?.summary.todayAssignedCount ?? 0),
+              color: "bg-eco-medium",
+            },
+            {
+              icon: Truck,
+              label: "Công suất còn lại",
+              value: formatMetric(enterpriseDashboard?.summary.todayRemainingCapacity ?? 0, "kg"),
+              color: "bg-eco-teal",
+            },
+            {
+              icon: BarChart3,
+              label: "Đã thu gom hôm nay",
+              value: formatMetric(enterpriseDashboard?.summary.todayCollectedQuantity ?? 0, "kg"),
+              color: "bg-eco-light",
+            },
+            {
+              icon: Recycle,
+              label: "Tổng thu gom toàn thời gian",
+              value: formatMetric(enterpriseDashboard?.summary.totalCollectedQuantityAllTime ?? 0, "kg"),
+              color: "bg-eco-medium",
+            },
+          ].map((s, i) => (
+            <Card key={i} className="shadow-card">
+              <CardContent className="flex items-center gap-4 p-4">
+                <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${s.color}`}>
+                  <s.icon className="h-6 w-6 text-eco-dark" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">{s.label}</p>
+                  <p className="font-display text-2xl font-bold text-foreground">{s.value}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
       </div>
 
       <Tabs defaultValue="requests">
@@ -975,54 +1061,185 @@ const EnterpriseDashboard = () => {
 
         {/* ── Tab: Thống kê ── */}
         <TabsContent value="stats">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Card className="shadow-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 font-display text-base">
-                  <BarChart3 className="h-5 w-5 text-primary" /> Theo loại rác
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {[
-                  { type: "Nhựa",        amount: "120 kg", pct: 40 },
-                  { type: "Giấy/Carton", amount: "90 kg",  pct: 30 },
-                  { type: "Kim loại",    amount: "45 kg",  pct: 15 },
-                  { type: "Thủy tinh",   amount: "30 kg",  pct: 10 },
-                  { type: "Khác",        amount: "15 kg",  pct: 5  },
-                ].map((w, i) => (
-                  <div key={i} className="mb-3">
-                    <div className="mb-1 flex justify-between text-sm">
-                      <span className="text-foreground">{w.type}</span>
-                      <span className="text-muted-foreground">{w.amount}</span>
+          {enterpriseDashboardError ? (
+            <Alert className="border-destructive/30 bg-destructive/5">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Không thể tải thống kê doanh nghiệp</AlertTitle>
+              <AlertDescription>
+                Hệ thống chưa lấy được dữ liệu dashboard từ backend. Bạn có thể tải lại trang để thử lại.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card className="shadow-card lg:col-span-2">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 font-display text-base">
+                    <BarChart3 className="h-5 w-5 text-primary" /> Công suất theo loại rác
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {enterpriseDashboardLoading ? (
+                    <Skeleton className="h-[320px] w-full rounded-xl" />
+                  ) : enterpriseDashboard?.capacityByWasteType.length ? (
+                    <ChartContainer
+                      config={enterpriseCapacityChartConfig}
+                      className="h-[320px] w-full"
+                    >
+                      <BarChart data={enterpriseDashboard.capacityByWasteType} barGap={8}>
+                        <CartesianGrid vertical={false} />
+                        <XAxis dataKey="wasteTypeName" tickLine={false} axisLine={false} />
+                        <YAxis tickLine={false} axisLine={false} />
+                        <ChartTooltip
+                          cursor={false}
+                          content={
+                            <ChartTooltipContent
+                              formatter={(value, name) => (
+                                <>
+                                  <span className="text-muted-foreground">{String(name)}</span>
+                                  <span className="font-mono font-medium text-foreground">
+                                    {formatMetric(Number(value ?? 0), "kg")}
+                                  </span>
+                                </>
+                              )}
+                            />
+                          }
+                        />
+                        <Bar dataKey="dailyCapacity" radius={[6, 6, 0, 0]} fill="var(--color-dailyCapacity)" />
+                        <Bar dataKey="assignedToday" radius={[6, 6, 0, 0]} fill="var(--color-assignedToday)" />
+                        <Bar dataKey="remaining" radius={[6, 6, 0, 0]} fill="var(--color-remaining)" />
+                      </BarChart>
+                    </ChartContainer>
+                  ) : (
+                    <div className="flex min-h-[220px] flex-col items-center justify-center gap-2 text-muted-foreground">
+                      <AlertCircle className="h-10 w-10 opacity-40" />
+                      <p className="text-sm">Chưa có dữ liệu công suất theo loại rác.</p>
                     </div>
-                    <div className="h-2 rounded-full bg-muted">
-                      <div className="h-2 rounded-full bg-primary" style={{ width: `${w.pct}%` }} />
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 font-display text-base">
+                    <Clock className="h-5 w-5 text-primary" /> Khối lượng thu gom theo tháng
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {enterpriseDashboardLoading ? (
+                    <Skeleton className="h-[280px] w-full rounded-xl" />
+                  ) : enterpriseDashboard?.collectedQuantityByMonth.length ? (
+                    <ChartContainer
+                      config={enterpriseCollectedByMonthChartConfig}
+                      className="h-[280px] w-full"
+                    >
+                      <LineChart data={enterpriseDashboard.collectedQuantityByMonth}>
+                        <CartesianGrid vertical={false} />
+                        <XAxis dataKey="label" tickLine={false} axisLine={false} />
+                        <YAxis tickLine={false} axisLine={false} />
+                        <ChartTooltip
+                          cursor={false}
+                          content={
+                            <ChartTooltipContent
+                              formatter={(value) => (
+                                <span className="font-mono font-medium text-foreground">
+                                  {formatMetric(Number(value ?? 0), "kg")}
+                                </span>
+                              )}
+                            />
+                          }
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="value"
+                          stroke="var(--color-value)"
+                          strokeWidth={3}
+                          dot={{ r: 4, fill: "var(--color-value)" }}
+                          activeDot={{ r: 6 }}
+                        />
+                      </LineChart>
+                    </ChartContainer>
+                  ) : (
+                    <div className="flex min-h-[220px] flex-col items-center justify-center gap-2 text-muted-foreground">
+                      <AlertCircle className="h-10 w-10 opacity-40" />
+                      <p className="text-sm">Chưa có dữ liệu thu gom theo tháng.</p>
                     </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-            <Card className="shadow-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 font-display text-base">
-                  <Clock className="h-5 w-5 text-primary" /> Tổng quan tháng 2/2025
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {[
-                  { label: "Tổng yêu cầu",       value: "58"        },
-                  { label: "Đã hoàn thành",       value: "48 (82.7%)" },
-                  { label: "Tổng khối lượng",     value: "300 kg"    },
-                  { label: "Thời gian xử lý TB",  value: "4.2 giờ"   },
-                ].map((s, i) => (
-                  <div key={i} className="flex justify-between border-b border-border pb-2 last:border-0">
-                    <span className="text-sm text-muted-foreground">{s.label}</span>
-                    <span className="text-sm font-semibold text-foreground">{s.value}</span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 font-display text-base">
+                    <Recycle className="h-5 w-5 text-primary" /> Tỷ trọng theo loại rác
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {enterpriseDashboardLoading ? (
+                    <Skeleton className="h-[280px] w-full rounded-xl" />
+                  ) : enterpriseDashboard?.collectedQuantityByWasteType.length ? (
+                    <ChartContainer
+                      config={enterpriseCollectedByWasteTypeChartConfig}
+                      className="h-[280px] w-full"
+                    >
+                      <PieChart>
+                        <ChartTooltip
+                          content={
+                            <ChartTooltipContent
+                              formatter={(value, name) => (
+                                <>
+                                  <span className="text-muted-foreground">{String(name)}</span>
+                                  <span className="font-mono font-medium text-foreground">
+                                    {formatMetric(Number(value ?? 0), "kg")}
+                                  </span>
+                                </>
+                              )}
+                            />
+                          }
+                        />
+                        <Pie
+                          data={enterpriseDashboard.collectedQuantityByWasteType}
+                          dataKey="value"
+                          nameKey="label"
+                          innerRadius={58}
+                          outerRadius={92}
+                          paddingAngle={2}
+                        >
+                          {enterpriseDashboard.collectedQuantityByWasteType.map((entry, index) => (
+                            <Cell
+                              key={`${entry.label}-${index}`}
+                              fill={PIE_COLORS[index % PIE_COLORS.length]}
+                            />
+                          ))}
+                        </Pie>
+                      </PieChart>
+                    </ChartContainer>
+                  ) : (
+                    <div className="flex min-h-[220px] flex-col items-center justify-center gap-2 text-muted-foreground">
+                      <AlertCircle className="h-10 w-10 opacity-40" />
+                      <p className="text-sm">Chưa có dữ liệu phân bổ theo loại rác.</p>
+                    </div>
+                  )}
+
+                  {!enterpriseDashboardLoading && !!enterpriseDashboard?.collectedQuantityByWasteType.length && (
+                    <div className="mt-4 grid gap-2">
+                      {enterpriseDashboard.collectedQuantityByWasteType.map((item, index) => (
+                        <div key={item.label} className="flex items-center justify-between rounded-lg border border-border/70 px-3 py-2 text-sm">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="h-2.5 w-2.5 rounded-full"
+                              style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }}
+                            />
+                            <span className="text-foreground">{item.label}</span>
+                          </div>
+                          <span className="font-medium text-foreground">{formatMetric(item.value, "kg")}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </TabsContent>
 
         {/* ══════════════════════════════════════════════════════════════════════

@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useEffect } from "react";
+﻿import { useState, useRef, useMemo, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import ReportDetailModal from "@/components/ReportDetailModal";
 import MapPicker from "@/components/MapPicker";
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,7 +24,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Plus, MapPin, Clock, Award, Trophy, Star, Camera, TrendingUp, Loader2, ChevronRight, X, Map, Search, AlertTriangle, ChevronDown, ChevronLeft, Leaf, Recycle, Flame, Package } from "lucide-react";
+import { Plus, MapPin, Clock, Award, Trophy, Star, Camera, TrendingUp, Loader2, ChevronRight, X, Map, Search, AlertTriangle, ChevronDown, ChevronLeft, Leaf, Recycle, Flame, Package, Gift } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { wasteReportService, WasteReport, CreateWasteReportRequest } from "@/services/wasteReport";
@@ -32,18 +33,26 @@ import { imageService } from "@/services/image";
 import { complaintService, Complaint } from "@/services/complaint";
 import { disputeResolutionService } from "@/services/disputeResolution";
 import { useCitizenPoint, useCitizenPointLeaderboard, useCitizenPointMyRank } from "@/hooks/useCitizenPoint";
+import { useActiveRewards, useMyRewardRedemptions, useRedeemReward } from "@/hooks/reward.hooks";
+import {
+  formatWasteQuantityInput,
+  getWasteQuantityListValidationError,
+  hasInvalidWasteQuantity,
+  parseWasteQuantityInput,
+} from "@/lib/reportQuantity";
 
 const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   PENDING: { label: "Chờ xử lý", variant: "secondary" },
   ACCEPTED: { label: "Đã tiếp nhận", variant: "outline" },
   PROCESSING: { label: "Đã tiếp nhận", variant: "outline" },
-  ONTHEWAY: { label: "\u0110ang \u0111\u1ebfn l\u1ea5y", variant: "outline" },
-  COLLECTED: { label: "\u0110\u00e3 thu gom", variant: "default" },
-  VERIFIED: { label: "\u0048\u006f\u00e0\u006e\u0020\u0074\u0068\u00e0\u006e\u0068", variant: "default" },
+  ONTHEWAY: { label: "Đang đến lấy", variant: "outline" },
+  COLLECTED: { label: "Đã thu gom", variant: "default" },
+  VERIFIED: { label: "Hoàn thành", variant: "default" },
   ASSIGNED: { label: "Đã điều phối", variant: "default" },
   COMPLETED: { label: "Hoàn thành", variant: "default" },
   REJECTED: { label: "Từ chối", variant: "destructive" },
   CANCELLED: { label: "Đã hủy", variant: "destructive" },
+  NOENTERPRISEAVAILABLE: { label: "Không có đơn vị nhận", variant: "secondary" },
 };
 
 const complaintStatusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -88,7 +97,7 @@ const CitizenComplaintCard = ({
     complaint.status === "Resolved"
       ? "Đã có kết quả xử lý"
       : complaint.status === "EnterpriseResponded"
-        ? "Doanh nghiệp đã phản hồi, chờ quản trị viên quyết định"
+        ? "Doanh nghiệp đã phản hồi và đang chờ quản trị viên xem xét"
         : "Đang chờ phản hồi";
 
   return (
@@ -141,7 +150,7 @@ const CitizenDashboard = () => {
   const [complaintContent, setComplaintContent] = useState("");
   const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(null);
 
-  // Tạo blob preview URLs 1 lần khi imageFiles thay đổi, cleanup để tránh memory leak
+  // Táº¡o blob preview URLs 1 láº§n khi imageFiles thay Ä‘á»•i, cleanup Ä‘á»ƒ trÃ¡nh memory leak
   useEffect(() => {
     const urls = imageFiles.map((file) => URL.createObjectURL(file));
     setImagePreviewUrls(urls);
@@ -183,7 +192,7 @@ const CitizenDashboard = () => {
     setImageSuggestion(null);
   };
 
-  // Fetch danh sách loại rác cho dropdown (chỉ active)
+  // Fetch danh sÃ¡ch loáº¡i rÃ¡c cho dropdown (chá»‰ active)
   const { data: allWasteTypes = [] } = useQuery({
     queryKey: ["wasteTypes"],
     queryFn: () => wasteTypeService.getAll(),
@@ -228,7 +237,7 @@ const CitizenDashboard = () => {
     }
 
     if (suggestedCategory && suggestedCategoryMap[suggestedCategory]) {
-      toast.success(`Hệ thống gợi ý nhóm rác: ${suggestedCategoryMap[suggestedCategory].label}`);
+      toast.success(`Há»‡ thá»‘ng gá»£i Ã½ nhÃ³m rÃ¡c: ${suggestedCategoryMap[suggestedCategory].label}`);
     }
   };
 
@@ -318,7 +327,7 @@ const CitizenDashboard = () => {
     }
     if (removedImage?.publicId) {
       void imageService.deleteOne(removedImage.publicId).catch(() => {
-        toast.error("Không thể xóa ảnh đã tải lên");
+        toast.error("KhÃ´ng thá»ƒ xÃ³a áº£nh Ä‘Ã£ táº£i lÃªn");
       });
     }
   };
@@ -337,7 +346,7 @@ const CitizenDashboard = () => {
     resetForm();
   };
 
-  // Fetch danh sách báo cáo của citizen hiện tại
+  // Fetch danh sÃ¡ch bÃ¡o cÃ¡o cá»§a citizen hiá»‡n táº¡i
   const { data: rawReports = [], isLoading: loadingReports } = useQuery({
     queryKey: ["wasteReports", user?.id],
     queryFn: () => wasteReportService.getAll({ CitizenId: user?.id }),
@@ -345,7 +354,7 @@ const CitizenDashboard = () => {
     staleTime: 0,
   });
 
-  // Filter client-side phòng trường hợp BE không filter đúng CitizenId
+  // Filter client-side phÃ²ng trÆ°á»ng há»£p BE khÃ´ng filter Ä‘Ãºng CitizenId
   const reports = rawReports.filter(
     (r) => !r.citizenId || r.citizenId === user?.id
   );
@@ -356,6 +365,19 @@ const CitizenDashboard = () => {
     enabled: !!user?.id,
   });
   const complaints = complaintData?.items ?? [];
+
+  const {
+    data: rewards = [],
+    isLoading: rewardsLoading,
+    isError: rewardsError,
+  } = useActiveRewards();
+
+  const {
+    data: rewardRedemptionsData,
+    isLoading: rewardRedemptionsLoading,
+    isError: rewardRedemptionsError,
+  } = useMyRewardRedemptions(1, 20);
+  const rewardRedemptions = rewardRedemptionsData?.items ?? [];
 
   const {
     data: selectedComplaintResolutions = [],
@@ -385,7 +407,7 @@ const CitizenDashboard = () => {
     resetComplaintForm();
   };
 
-  // Mutation tạo báo cáo mới
+  // Mutation táº¡o bÃ¡o cÃ¡o má»›i
   const createMutation = useMutation({
     mutationFn: wasteReportService.create,
     onSuccess: () => {
@@ -393,7 +415,7 @@ const CitizenDashboard = () => {
       setConfirmCreateOpen(false);
       setOpen(false);
       resetForm();
-      // Refresh danh sách báo cáo
+      // Refresh danh sÃ¡ch bÃ¡o cÃ¡o
       queryClient.invalidateQueries({ queryKey: ["wasteReports"] });
     },
     onError: (error: Error) => {
@@ -401,7 +423,7 @@ const CitizenDashboard = () => {
     },
   });
 
-  // Mutation hủy báo cáo
+  // Mutation há»§y bÃ¡o cÃ¡o
   const deleteMutation = useMutation({
     mutationFn: wasteReportService.delete,
     onSuccess: () => {
@@ -412,7 +434,7 @@ const CitizenDashboard = () => {
     onError: () => toast.error("Hủy báo cáo thất bại. Vui lòng thử lại!"),
   });
 
-  // Mutation redispatch báo cáo
+  // Mutation redispatch bÃ¡o cÃ¡o
   const redispatchMutation = useMutation({
     mutationFn: wasteReportService.redispatch,
     onSuccess: () => {
@@ -423,7 +445,7 @@ const CitizenDashboard = () => {
     onError: () => toast.error("Gửi lại báo cáo thất bại. Vui lòng thử lại!"),
   });
 
-  // Mutation update báo cáo khi NoEnterpriseAvailable
+  // Mutation update bÃ¡o cÃ¡o khi NoEnterpriseAvailable
   const updateNoEnterpriseMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Parameters<typeof wasteReportService.updateNoEnterpriseAvailable>[1] }) =>
       wasteReportService.updateNoEnterpriseAvailable(id, data),
@@ -449,13 +471,15 @@ const CitizenDashboard = () => {
       closeComplaintDialog();
     },
     onError: (error: Error) => {
-      toast.error(error.message || "Gửi khiếu nại thất bại");
+      toast.error(error.message || "Gá»­i khiáº¿u náº¡i tháº¥t báº¡i");
     },
   });
 
+  const redeemRewardMutation = useRedeemReward();
+
   const getGPS = () => {
     if (!navigator.geolocation) {
-      toast.error("Trình duyệt không hỗ trợ GPS");
+      toast.error("TrÃ¬nh duyá»‡t khÃ´ng há»— trá»£ GPS");
       return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -463,7 +487,7 @@ const CitizenDashboard = () => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         setForm((f) => ({ ...f, latitude: lat, longitude: lng }));
-        toast.success("Đã lấy tọa độ GPS thành công!");
+        toast.success("ÄÃ£ láº¥y tá»a Ä‘á»™ GPS thÃ nh cÃ´ng!");
         // Reverse geocode
         try {
           const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=vi`);
@@ -473,16 +497,16 @@ const CitizenDashboard = () => {
           setLocationName(name || null);
         } catch { setLocationName(null); }
       },
-      () => toast.error("Không thể lấy tọa độ GPS. Vui lòng nhập địa chỉ thủ công.")
+      () => toast.error("KhÃ´ng thá»ƒ láº¥y tá»a Ä‘á»™ GPS. Vui lÃ²ng nháº­p Ä‘á»‹a chá»‰ thá»§ cÃ´ng.")
     );
   };
 
   // Category cards for step-1 dropdown
   const CATEGORY_CARDS = [
-    { value: 0, label: "Hữu cơ",  Icon: Leaf,     iconColor: "text-green-600",  borderColor: "border-green-200",  bgHover: "hover:bg-green-50" },
-    { value: 1, label: "Tái chế", Icon: Recycle,  iconColor: "text-blue-600",   borderColor: "border-blue-200",   bgHover: "hover:bg-blue-50" },
-    { value: 2, label: "Nguy hại",Icon: Flame,    iconColor: "text-orange-600", borderColor: "border-orange-200", bgHover: "hover:bg-orange-50" },
-    { value: 3, label: "Khác",    Icon: Package,  iconColor: "text-gray-500",   borderColor: "border-gray-200",   bgHover: "hover:bg-gray-50" },
+    { value: 0, label: "Hữu cơ", Icon: Leaf, iconColor: "text-green-600", borderColor: "border-green-200", bgHover: "hover:bg-green-50" },
+    { value: 1, label: "Tái chế", Icon: Recycle, iconColor: "text-blue-600", borderColor: "border-blue-200", bgHover: "hover:bg-blue-50" },
+    { value: 2, label: "Nguy hại", Icon: Flame, iconColor: "text-orange-600", borderColor: "border-orange-200", bgHover: "hover:bg-orange-50" },
+    { value: 3, label: "Khác", Icon: Package, iconColor: "text-gray-500", borderColor: "border-gray-200", bgHover: "hover:bg-gray-50" },
   ];
 
   // Grouped counts for step-1 cards (all active waste types, no search)
@@ -522,7 +546,7 @@ const CitizenDashboard = () => {
       } else {
         // Add with default quantity 1 and empty note
         if (prev.length >= 5) {
-          toast.error("Chỉ được chọn tối đa 5 loại rác");
+          toast.error("Chá»‰ Ä‘Æ°á»£c chá»n tá»‘i Ä‘a 5 loáº¡i rÃ¡c");
           return prev;
         }
         return [...prev, { wasteTypeId: id, quantity: 1, note: "" }];
@@ -532,7 +556,8 @@ const CitizenDashboard = () => {
 
   const getCreateReportValidationError = () => {
     if (selectedWastes.length === 0) return "Vui lòng chọn ít nhất 1 loại rác";
-    if (selectedWastes.some((w) => !w.quantity || w.quantity <= 0)) return "Vui lòng nhập số lượng > 0 cho tất cả loại rác";
+    const quantityError = getWasteQuantityListValidationError(selectedWastes);
+    if (quantityError) return quantityError;
     if (imageFiles.length === 0) return "Vui lòng thêm ít nhất 1 ảnh";
     if (uploadedImages.length !== imageFiles.length) return "Ảnh đang được xử lý, vui lòng chờ một chút";
     if (!form.latitude) return "Vui lòng xác định vị trí GPS";
@@ -598,7 +623,7 @@ const CitizenDashboard = () => {
   const handleCreateComplaint = (e: React.FormEvent) => {
     e.preventDefault();
     if (!complaintReport) {
-      toast.error("Không tìm thấy báo cáo để khiếu nại");
+      toast.error("Không tìm thấy báo cáo liên quan cho khiếu nại này");
       return;
     }
     if (!complaintType.trim()) {
@@ -619,7 +644,7 @@ const CitizenDashboard = () => {
     return title;
   };
 
-  // Thống kê nhanh từ danh sách báo cáo
+  // Thá»‘ng kÃª nhanh tá»« danh sÃ¡ch bÃ¡o cÃ¡o
   const totalReports = reports.length;
   const pendingReports = reports.filter((r) => {
     const status = r.status?.toUpperCase();
@@ -692,6 +717,10 @@ const CitizenDashboard = () => {
       <Tabs defaultValue="reports">
         <TabsList className="flex w-full justify-start overflow-x-auto whitespace-nowrap">
           <TabsTrigger value="reports">Báo cáo của tôi</TabsTrigger>
+          <TabsTrigger value="rewards" className="gap-1.5">
+            <Gift className="h-4 w-4" />
+            Đổi quà
+          </TabsTrigger>
           <TabsTrigger value="complaints" className="gap-1.5">
             Khiếu nại của tôi
             {openComplaintCount > 0 && (
@@ -715,25 +744,25 @@ const CitizenDashboard = () => {
                   <DialogTitle className="font-display">Tạo báo cáo rác mới</DialogTitle>
                 </DialogHeader>
                 <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
-                  Ví dụ: ảnh chai nước suối có thể được gợi ý là nhóm <span className="font-medium text-foreground">Tái chế</span> và tự chọn sẵn loại rác phù hợp nếu hệ thống nhận diện được.
+                  Ví dụ: ảnh chai nước suối có thể được gợi ý là nhóm <span className="font-medium text-foreground">Tái chế</span> và hệ thống có thể tự chọn sẵn loại rác phù hợp nếu nhận diện được.
                 </div>
                 {(imageSuggestion?.categoryLabel || imageSuggestion?.wasteTypeName) && (
                   <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
                     {imageSuggestion.wasteTypeName ? (
                       <>
-                        Gợi ý từ ảnh: loại rác <span className="font-semibold">{imageSuggestion.wasteTypeName}</span>
+                        Gợi ý từ ảnh: <span className="font-semibold">{imageSuggestion.wasteTypeName}</span>
                         {imageSuggestion.categoryLabel ? <> thuộc nhóm <span className="font-semibold">{imageSuggestion.categoryLabel}</span>.</> : "."}
                       </>
                     ) : (
                       <>
-                        Gợi ý từ ảnh: nhóm rác <span className="font-semibold">{imageSuggestion.categoryLabel}</span>.
+                        Gợi ý từ ảnh: <span className="font-semibold">{imageSuggestion.categoryLabel}</span>.
                       </>
                     )}
                   </div>
                 )}
                 <form onSubmit={handleCreateReport} className="space-y-4 pb-2">
 
-                  {/* ── Loại rác multi-select ── */}
+                  {/* â”€â”€ Loáº¡i rÃ¡c multi-select â”€â”€ */}
                   <div>
                     <Label>Loại rác *</Label>
                     <div className="relative mt-1">
@@ -775,7 +804,7 @@ const CitizenDashboard = () => {
                           <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-lg">
 
                             {selectedCategory === null ? (
-                              /* ── Step 1: Category selection ── */
+                              /* â”€â”€ Step 1: Category selection â”€â”€ */
                               <div className="p-2">
                                 <p className="px-2 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                                   Chọn danh mục
@@ -799,7 +828,7 @@ const CitizenDashboard = () => {
                                 </div>
                               </div>
                             ) : (
-                              /* ── Step 2: WasteType list within selected category ── */
+                              /* â”€â”€ Step 2: WasteType list within selected category â”€â”€ */
                               <div>
                                 {/* Back button */}
                                 <button
@@ -815,7 +844,7 @@ const CitizenDashboard = () => {
                                 </button>
                                 {/* Search */}
                                 <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-                                  <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                                  <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
                                   <input
                                     autoFocus
                                     className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
@@ -841,7 +870,7 @@ const CitizenDashboard = () => {
                                           <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
                                             selected ? "border-primary bg-primary text-primary-foreground" : "border-input"
                                           }`}>
-                                            {selected && <span className="text-[10px] leading-none">✓</span>}
+                                            {selected && <span className="text-[10px] leading-none">âœ“</span>}
                                           </span>
                                           <span className="truncate">{wt.name}</span>
                                         </div>
@@ -865,7 +894,7 @@ const CitizenDashboard = () => {
                     )}
                   </div>
 
-                  {/* ── Chi tiết loại rác ── */}
+                  {/* â”€â”€ Chi tiáº¿t loáº¡i rÃ¡c â”€â”€ */}
                   {selectedWastes.length > 0 && (
                     <div>
                       <Label>Chi tiết loại rác</Label>
@@ -881,13 +910,14 @@ const CitizenDashboard = () => {
                                     <Label className="text-xs">Số lượng (kg) *</Label>
                                     <Input
                                       type="number"
-                                      min="1"
-                                      step="1"
+                                      inputMode="decimal"
+                                      min="0.01"
+                                      step="0.01"
                                       className="mt-1 h-8 text-sm"
                                       placeholder="Ví dụ: 10"
-                                      value={waste.quantity}
+                                      value={formatWasteQuantityInput(waste.quantity)}
                                       onChange={(e) => {
-                                        const qty = parseInt(e.target.value) || 1;
+                                        const qty = parseWasteQuantityInput(e.target.value);
                                         setSelectedWastes((prev) =>
                                           prev.map((w, i) => (i === index ? { ...w, quantity: qty } : w))
                                         );
@@ -923,7 +953,7 @@ const CitizenDashboard = () => {
                     </div>
                   )}
 
-                  {/* ── Mô tả ── */}
+                  {/* â”€â”€ MÃ´ táº£ â”€â”€ */}
                   <div>
                     <Label>Mô tả</Label>
                     <Textarea
@@ -932,10 +962,10 @@ const CitizenDashboard = () => {
                       value={form.description || ""}
                       onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                     />
-                    <p className="mt-1 text-xs text-muted-foreground">Mô tả giúp đơn vị thu gom xử lý nhanh hơn.</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Mô tả rõ ràng sẽ giúp đơn vị thu gom xử lý nhanh hơn.</p>
                   </div>
 
-                  {/* ── Hình ảnh ── */}
+                  {/* â”€â”€ HÃ¬nh áº£nh â”€â”€ */}
                   <div>
                     <Label>Hình ảnh *</Label>
                     <input
@@ -985,7 +1015,7 @@ const CitizenDashboard = () => {
                     <p className="mt-1 text-xs text-muted-foreground">Chụp rõ toàn bộ đống rác để xác nhận nhanh hơn.</p>
                   </div>
 
-                  {/* ── Vị trí GPS ── */}
+                  {/* â”€â”€ Vá»‹ trÃ­ GPS â”€â”€ */}
                   <div>
                     <Label>Vị trí GPS *</Label>
                     <div className="mt-1 flex gap-2">
@@ -1006,7 +1036,7 @@ const CitizenDashboard = () => {
                     )}
                   </div>
 
-                  {/* ── Địa chỉ chi tiết ── */}
+                  {/* â”€â”€ Äá»‹a chá»‰ chi tiáº¿t â”€â”€ */}
                   <div>
                     <Label>Địa chỉ chi tiết</Label>
                     <Input
@@ -1018,10 +1048,10 @@ const CitizenDashboard = () => {
                   </div>
 
                   {/* Validation hints */}
-                  {(selectedWastes.length === 0 || imageFiles.length === 0 || uploadedImages.length !== imageFiles.length || isUploadingImages || !form.latitude || selectedWastes.some((w) => !w.quantity || w.quantity <= 0)) && (
+                  {(selectedWastes.length === 0 || imageFiles.length === 0 || uploadedImages.length !== imageFiles.length || isUploadingImages || !form.latitude || hasInvalidWasteQuantity(selectedWastes)) && (
                     <ul className="space-y-0.5 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
                       {selectedWastes.length === 0 && <li>• Chọn ít nhất 1 loại rác</li>}
-                      {selectedWastes.some((w) => !w.quantity || w.quantity <= 0) && <li>• Nhập số lượng &gt; 0 cho tất cả loại rác</li>}
+                      {hasInvalidWasteQuantity(selectedWastes) && <li>• Nhập khối lượng hợp lệ cho tất cả loại rác (&gt; 0 kg, tối đa 2 số lẻ)</li>}
                       {imageFiles.length === 0 && <li>• Thêm ít nhất 1 ảnh</li>}
                       {!form.latitude && <li>• Xác định vị trí GPS</li>}
                     </ul>
@@ -1089,7 +1119,7 @@ const CitizenDashboard = () => {
                         {hasImages && r.wastes?.[0]?.imageUrls?.[0] ? (
                           <img
                             src={r.wastes[0].imageUrls[0]}
-                            alt="Ảnh báo cáo"
+                            alt="Report image"
                             className="h-10 w-10 rounded-lg object-cover border border-border"
                           />
                         ) : (
@@ -1133,11 +1163,219 @@ const CitizenDashboard = () => {
           )}
         </TabsContent>
 
+        <TabsContent value="rewards">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+            <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-3">
+                <Card className="shadow-card md:col-span-2">
+                  <CardContent className="flex items-center gap-4 p-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-eco-light">
+                      <Award className="h-6 w-6 text-eco-dark" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Điểm thưởng hiện tại</p>
+                      <p className="font-display text-2xl font-bold text-foreground">
+                        {citizenPointSummaryLoading
+                          ? "..."
+                          : citizenPointSummaryError
+                            ? "--"
+                            : `${citizenPointSummary?.totalPoints ?? 0} điểm`}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="shadow-card">
+                  <CardContent className="flex items-center gap-4 p-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-eco-medium">
+                      <Gift className="h-6 w-6 text-eco-dark" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Phần thưởng khả dụng</p>
+                      <p className="font-display text-2xl font-bold text-foreground">
+                        {rewardsLoading ? "..." : rewards.filter((reward) => reward.isActive && reward.stock > 0).length}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card className="shadow-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 font-display text-base">
+                    <Gift className="h-5 w-5 text-primary" /> Đổi phần thưởng bằng điểm
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {rewardsLoading ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {Array.from({ length: 4 }).map((_, index) => (
+                        <Card key={`reward-skeleton-${index}`} className="border border-border/70 shadow-none">
+                          <CardContent className="space-y-3 p-4">
+                            <Skeleton className="h-28 w-full rounded-lg" />
+                            <Skeleton className="h-4 w-2/3" />
+                            <Skeleton className="h-3 w-full" />
+                            <Skeleton className="h-9 w-full" />
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : rewardsError ? (
+                    <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
+                      <AlertTriangle className="h-8 w-8 opacity-40" />
+                      <p className="text-sm">Không thể tải danh sách phần thưởng.</p>
+                    </div>
+                  ) : rewards.length === 0 ? (
+                    <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
+                      <Gift className="h-8 w-8 opacity-40" />
+                      <p className="text-sm">Hiện chưa có phần thưởng nào để đổi.</p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {rewards.map((reward) => {
+                        const currentPoints = citizenPointSummary?.totalPoints ?? 0;
+                        const isSoldOut = reward.stock <= 0;
+                        const notEnoughPoints = currentPoints < reward.pointCost;
+                        const redeemDisabled =
+                          redeemRewardMutation.isPending ||
+                          !reward.isActive ||
+                          isSoldOut ||
+                          notEnoughPoints;
+
+                        return (
+                          <Card key={reward.id} className="border border-border/70 shadow-none">
+                            <CardContent className="space-y-3 p-4">
+                              {reward.imageUrl ? (
+                                <img
+                                  src={reward.imageUrl}
+                                  alt={reward.name}
+                                  className="h-32 w-full rounded-lg border object-cover"
+                                />
+                              ) : (
+                                <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-border bg-muted/40">
+                                  <Gift className="h-8 w-8 text-muted-foreground/50" />
+                                </div>
+                              )}
+
+                              <div className="space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="font-medium text-foreground">{reward.name}</p>
+                                  <Badge variant={reward.isActive ? "outline" : "secondary"}>
+                                    {reward.isActive ? "Đang hoạt động" : "Tạm ngưng"}
+                                  </Badge>
+                                  {isSoldOut && <Badge variant="destructive">Hết hàng</Badge>}
+                                </div>
+                                <p className="line-clamp-2 text-sm text-muted-foreground">
+                                  {reward.description || "Phần thưởng có thể đổi bằng điểm từ hoạt động tái chế của bạn."}
+                                </p>
+                              </div>
+
+                              <div className="flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2 text-sm">
+                                <span className="text-muted-foreground">Điểm quy đổi</span>
+                                <span className="font-semibold text-primary">{reward.pointCost} điểm</span>
+                              </div>
+
+                              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                <span>Còn lại: {reward.stock}</span>
+                                {reward.createdTime && (
+                                  <span>Tạo lúc {new Date(reward.createdTime).toLocaleDateString("vi-VN")}</span>
+                                )}
+                              </div>
+
+                              <Button
+                                className="w-full"
+                                disabled={redeemDisabled}
+                                onClick={() =>
+                                  redeemRewardMutation.mutate(reward.id, {
+                                    onSuccess: () => {
+                                      toast.success("Đổi quà thành công. Điểm thưởng của bạn đã được cập nhật.");
+                                    },
+                                    onError: (error) => {
+                                      toast.error(error.message || "Đổi quà thất bại");
+                                    },
+                                  })
+                                }
+                              >
+                                {redeemRewardMutation.isPending ? "Đang xử lý..." : "Đổi ngay"}
+                              </Button>
+
+                              {notEnoughPoints && (
+                                <p className="text-xs text-destructive">
+                                  Bạn cần thêm {reward.pointCost - currentPoints} điểm để đổi phần thưởng này.
+                                </p>
+                              )}
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card className="shadow-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 font-display text-base">
+                  <Clock className="h-5 w-5 text-primary" /> Lịch sử đổi thưởng
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {rewardRedemptionsLoading ? (
+                  <div className="space-y-3">
+                    {Array.from({ length: 4 }).map((_, index) => (
+                      <Skeleton key={`reward-redemption-skeleton-${index}`} className="h-16 w-full rounded-lg" />
+                    ))}
+                  </div>
+                ) : rewardRedemptionsError ? (
+                  <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
+                    <AlertTriangle className="h-8 w-8 opacity-40" />
+                    <p className="text-sm">Không thể tải lịch sử đổi thưởng.</p>
+                  </div>
+                ) : rewardRedemptions.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
+                    <Gift className="h-8 w-8 opacity-40" />
+                    <p className="text-sm">Bạn chưa đổi phần thưởng nào.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {rewardRedemptions.map((redemption) => (
+                      <div
+                        key={redemption.id}
+                        className="flex flex-col gap-3 rounded-lg border border-border/70 p-3"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-dashed border-border bg-muted/40">
+                            <Gift className="h-5 w-5 text-muted-foreground/50" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-medium text-foreground">{redemption.rewardName}</p>
+                              <Badge variant="outline">Đã đổi</Badge>
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {redemption.createdTime
+                                ? new Date(redemption.createdTime).toLocaleString("vi-VN")
+                                : "Chưa rõ thời gian"}
+                            </p>
+                          </div>
+                          <span className="shrink-0 text-sm font-semibold text-primary">
+                            -{redemption.pointCostSnapshot} điểm
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
         <TabsContent value="complaints">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="font-display text-lg font-semibold text-foreground">Khiếu nại của tôi</h2>
-              <p className="text-sm text-muted-foreground">Theo dõi trạng thái xử lý complaint theo từng báo cáo.</p>
+              <p className="text-sm text-muted-foreground">Theo dõi trạng thái xử lý khiếu nại cho từng báo cáo.</p>
             </div>
           </div>
 
@@ -1149,7 +1387,7 @@ const CitizenDashboard = () => {
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-12 text-center">
               <AlertTriangle className="mb-2 h-8 w-8 text-muted-foreground" />
               <p className="font-medium text-foreground">Chưa có khiếu nại nào</p>
-              <p className="text-sm text-muted-foreground">Vào tab "Báo cáo của tôi" và bấm "Khiếu nại" trên báo cáo cần xử lý.</p>
+              <p className="text-sm text-muted-foreground">Vào tab "Báo cáo của tôi" và bấm "Khiếu nại" trên báo cáo bạn muốn theo dõi.</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -1181,7 +1419,7 @@ const CitizenDashboard = () => {
               ) : citizenPointLeaderboardError ? (
                 <p className="text-sm text-destructive">Không thể tải bảng xếp hạng.</p>
               ) : citizenPointLeaderboard.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Chưa có dữ liệu xếp hạng.</p>
+                <p className="text-sm text-muted-foreground">Chưa có dữ liệu bảng xếp hạng.</p>
               ) : (
                 <div className="space-y-3">
                   {citizenPointLeaderboard.map((item, index) => {
@@ -1221,7 +1459,7 @@ const CitizenDashboard = () => {
         initialLng={form.longitude}
       />
 
-      {/* Modal chi tiết báo cáo */}
+      {/* Modal chi tiáº¿t bÃ¡o cÃ¡o */}
       <ReportDetailModal
         report={selectedReport}
         open={!!selectedReport}
@@ -1325,7 +1563,7 @@ const CitizenDashboard = () => {
               <p className="font-medium text-foreground">
                 Báo cáo: {complaintReport?.description?.trim() || complaintReport?.wastes?.map((w) => w.wasteTypeName || w.wasteTypeId).join(", ") || "Báo cáo rác"}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">{"Khiếu nại sẽ được gửi kèm với báo cáo bạn đang chọn."}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Khiếu nại sẽ được gửi kèm với báo cáo bạn đang chọn.</p>
             </div>
 
             <div className="space-y-1.5">
@@ -1335,8 +1573,8 @@ const CitizenDashboard = () => {
                   <SelectValue>{complaintTypeMap[complaintType] || complaintType}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Feedback">{"Phản hồi"}</SelectItem>
-                  <SelectItem value="Complaint">{"Khiếu nại"}</SelectItem>
+                  <SelectItem value="Feedback">Phản hồi</SelectItem>
+                  <SelectItem value="Complaint">Khiếu nại</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1402,11 +1640,11 @@ const CitizenDashboard = () => {
                 ) : selectedComplaint.status !== "Resolved" ? (
                   <p className="mt-1 text-sm text-muted-foreground">Khiếu nại này đang được xử lý hoặc chưa có kết quả cuối cùng.</p>
                 ) : selectedComplaintResolutionsLoading ? (
-                  <p className="mt-1 text-sm text-muted-foreground">Đang tải kết quả xử lý...</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Đang tải lịch sử xử lý...</p>
                 ) : selectedComplaintResolutionsError ? (
-                  <p className="mt-1 text-sm text-destructive">Không thể tải kết quả xử lý</p>
+                  <p className="mt-1 text-sm text-destructive">Không thể tải lịch sử xử lý.</p>
                 ) : selectedComplaintResolutions.length === 0 ? (
-                  <p className="mt-1 text-sm text-muted-foreground">Hệ thống chưa trả về lịch sử phản hồi cho khiếu nại này.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Chưa có lịch sử xử lý cho khiếu nại này.</p>
                 ) : (
                   <div className="mt-2 space-y-2">
                     {selectedComplaintResolutions.map((resolution) => (
@@ -1433,6 +1671,7 @@ const CitizenDashboard = () => {
 };
 
 export default CitizenDashboard;
+
 
 
 

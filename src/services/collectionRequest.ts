@@ -149,6 +149,29 @@ export interface CollectorProofCreateBody {
   note: string;
 }
 
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const unwrapEnvelope = <T = unknown>(value: T | { data?: T }): T | unknown => {
+  if (isObject(value) && "data" in value) {
+    return value.data;
+  }
+
+  return value;
+};
+
+const toArray = <T = unknown>(value: unknown): T[] =>
+  Array.isArray(value) ? (value as T[]) : [];
+
+const toStringOrEmpty = (value: unknown): string =>
+  typeof value === "string" ? value : "";
+
+const toNullableString = (value: unknown): string | null =>
+  typeof value === "string" ? value : null;
+
+const toNullableNumber = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
 // Enterprise-facing proof shape returned by GET /collector-proofs/enterprise
 export interface CollectorProof {
   id: string;
@@ -169,18 +192,122 @@ export interface CollectorProof {
   longitude: number | null;
 }
 
+export interface CollectorProofDetail {
+  id: string;
+  assignmentId: string;
+  requestId: string;
+  collectorId: string;
+  imageUrl: string | null;
+  imageUrls: string[];
+  publicId: string | null;
+  note: string | null;
+  reviewStatus: "Pending" | "Approved" | "Rejected" | string;
+  reviewNote: string | null;
+  reviewedAt: string | null;
+  createdTime: string;
+  collectedAt: string | null;
+  wasteTypeName: string | null;
+  regionCode: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  address: string | null;
+}
+
 export interface CollectorProofListParams {
+  AssignmentId?: string;
+  ReviewStatus?: "Pending" | "Approved" | "Rejected";
   reviewStatus?: "Pending" | "Approved" | "Rejected";
   pageNumber?: number;
   pageSize?: number;
+  PageNumber?: number;
+  PageSize?: number;
 }
 
-export interface PagedProofResult {
-  items: CollectorProof[];
+export interface PagedProofResult<TItem = CollectorProof> {
+  items: TItem[];
   totalCount: number;
   pageNumber: number;
   pageSize: number;
 }
+
+const normalizeCollectorProof = (value: unknown): CollectorProof => {
+  const item = isObject(value) ? value : {};
+
+  return {
+    id: toStringOrEmpty(item.id),
+    assignmentId: toStringOrEmpty(item.assignmentId),
+    requestId: toStringOrEmpty(item.requestId),
+    collectorId: toStringOrEmpty(item.collectorId),
+    imageUrl: toStringOrEmpty(item.imageUrl),
+    publicId: toStringOrEmpty(item.publicId),
+    note: toNullableString(item.note),
+    reviewStatus: (toStringOrEmpty(item.reviewStatus) || "Pending") as CollectorProof["reviewStatus"],
+    reviewNote: toNullableString(item.reviewNote),
+    reviewedAt: toNullableString(item.reviewedAt),
+    createdTime: toStringOrEmpty(item.createdTime),
+    collectedAt: toNullableString(item.collectedAt),
+    wasteTypeName: toNullableString(item.wasteTypeName),
+    regionCode: toNullableString(item.regionCode),
+    latitude: toNullableNumber(item.latitude),
+    longitude: toNullableNumber(item.longitude),
+  };
+};
+
+const normalizeCollectorProofDetail = (value: unknown): CollectorProofDetail => {
+  const item = isObject(value) ? value : {};
+
+  return {
+    id: toStringOrEmpty(item.id),
+    assignmentId: toStringOrEmpty(item.assignmentId),
+    requestId: toStringOrEmpty(item.requestId),
+    collectorId: toStringOrEmpty(item.collectorId),
+    imageUrl: toNullableString(item.imageUrl),
+    imageUrls: toArray(item.imageUrls).filter((entry): entry is string => typeof entry === "string"),
+    publicId: toNullableString(item.publicId),
+    note: toNullableString(item.note),
+    reviewStatus: toStringOrEmpty(item.reviewStatus) || "Pending",
+    reviewNote: toNullableString(item.reviewNote),
+    reviewedAt: toNullableString(item.reviewedAt),
+    createdTime: toStringOrEmpty(item.createdTime),
+    collectedAt: toNullableString(item.collectedAt),
+    wasteTypeName: toNullableString(item.wasteTypeName),
+    regionCode: toNullableString(item.regionCode),
+    latitude: toNullableNumber(item.latitude),
+    longitude: toNullableNumber(item.longitude),
+    address: toNullableString(item.address),
+  };
+};
+
+const normalizePagedProofResult = <TItem>(
+  value: unknown,
+  normalizeItem: (item: unknown) => TItem,
+  fallback: CollectorProofListParams = {}
+): PagedProofResult<TItem> => {
+  const payload = unwrapEnvelope(value);
+  const page = isObject(payload) ? payload : {};
+  const items = toArray(page.items).map(normalizeItem);
+
+  return {
+    items,
+    totalCount: typeof page.totalCount === "number" ? page.totalCount : items.length,
+    pageNumber:
+      typeof page.pageNumber === "number"
+        ? page.pageNumber
+        : typeof fallback.pageNumber === "number"
+          ? fallback.pageNumber
+          : typeof fallback.PageNumber === "number"
+            ? fallback.PageNumber
+            : 1,
+    pageSize:
+      typeof page.pageSize === "number"
+        ? page.pageSize
+        : typeof fallback.pageSize === "number"
+          ? fallback.pageSize
+          : typeof fallback.PageSize === "number"
+            ? fallback.PageSize
+            : items.length,
+  };
+};
 
 export const collectorProofService = {
   create: async (body: CollectorProofCreateBody): Promise<void> => {
@@ -189,14 +316,26 @@ export const collectorProofService = {
 
   /** GET /api/collector-proofs/enterprise — list proofs for the current enterprise */
   getForEnterprise: async (params?: CollectorProofListParams): Promise<PagedProofResult> => {
-    const res = await api.get<PagedProofResult>("/collector-proofs/enterprise", { params });
-    return res.data;
+    const res = await api.get("/collector-proofs/enterprise", { params });
+    return normalizePagedProofResult(res.data, normalizeCollectorProof, params);
   },
 
   /** GET /api/collector-proofs/enterprise/{id} — single proof detail */
   getDetailForEnterprise: async (id: string): Promise<CollectorProof> => {
-    const res = await api.get<CollectorProof>(`/collector-proofs/enterprise/${id}`);
-    return res.data;
+    const res = await api.get(`/collector-proofs/enterprise/${id}`);
+    return normalizeCollectorProof(unwrapEnvelope(res.data));
+  },
+
+  /** GET /api/collector-proofs/collector — list proofs for the current collector */
+  getForCollector: async (params?: CollectorProofListParams): Promise<PagedProofResult<CollectorProofDetail>> => {
+    const res = await api.get("/collector-proofs/collector", { params });
+    return normalizePagedProofResult(res.data, normalizeCollectorProofDetail, params);
+  },
+
+  /** GET /api/collector-proofs/collector/{id} — collector proof detail */
+  getDetailForCollector: async (id: string): Promise<CollectorProofDetail> => {
+    const res = await api.get(`/collector-proofs/collector/${id}`);
+    return normalizeCollectorProofDetail(unwrapEnvelope(res.data));
   },
 
   /** PUT /api/collector-proofs/enterprise/{id}/review — approve or reject */

@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
   Users, Package, AlertTriangle, BarChart3, Shield, Ban, CheckCircle, Eye,
-  Plus, Pencil, Trash2, Leaf,
+  Plus, Pencil, Trash2, Leaf, Gift,
 } from "lucide-react";
 import { toast } from "sonner";
 import { enterpriseApprovalService } from "@/services/enterpriseApproval";
@@ -22,6 +22,14 @@ import { complaintService } from "@/services/complaint";
 import { disputeResolutionService } from "@/services/disputeResolution";
 import { pointRuleService, PointRule } from "@/services/pointRule";
 import { adminUserManagementService } from "@/services/adminUserManagement";
+import type { Reward } from "@/services/reward.types";
+import { imageService } from "@/services/image";
+import {
+  useAdminAdjustRewardStock,
+  useAdminCreateReward,
+  useAdminRewards,
+  useAdminUpdateReward,
+} from "@/hooks/reward.hooks";
 import {
   createDistrictThenWard,
   districtService,
@@ -375,6 +383,302 @@ const PointRuleFormDialog = ({
   );
 };
 
+interface RewardFormDialogProps {
+  open: boolean;
+  editing: Reward | null;
+  onClose: () => void;
+}
+
+const RewardFormDialog = ({ open, editing, onClose }: RewardFormDialogProps) => {
+  const isEdit = !!editing;
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [pointCost, setPointCost] = useState("1");
+  const [stock, setStock] = useState("0");
+  const [isActive, setIsActive] = useState(true);
+
+  useEffect(() => {
+    if (!open) return;
+    setName(editing?.name ?? "");
+    setDescription(editing?.description ?? "");
+    setImageUrl(editing?.imageUrl ?? "");
+    setPointCost(String(editing?.pointCost ?? 1));
+    setStock(String(editing?.stock ?? 0));
+    setIsActive(editing?.isActive ?? true);
+  }, [editing, open]);
+
+  const createMutation = useAdminCreateReward();
+  const updateMutation = useAdminUpdateReward();
+
+  const isPending = createMutation.isPending || updateMutation.isPending || isUploadingImage;
+
+  const handleRewardImageUpload = async (file?: File | null) => {
+    if (!file) return;
+
+    setIsUploadingImage(true);
+    try {
+      const result = await imageService.uploadOne(file);
+      setImageUrl(result.url);
+      toast.success("Đã tải ảnh phần thưởng lên thành công");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Tải ảnh phần thưởng thất bại";
+      toast.error(message);
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!name.trim()) {
+      toast.error("Vui lòng nhập tên phần thưởng");
+      return;
+    }
+
+    const pointCostValue = Number(pointCost);
+    const stockValue = Number(stock);
+
+    if (!Number.isInteger(pointCostValue) || pointCostValue < 1) {
+      toast.error("Điểm đổi phải là số nguyên từ 1 trở lên");
+      return;
+    }
+
+    if (!Number.isInteger(stockValue) || stockValue < 0) {
+      toast.error("Tồn kho phải là số nguyên từ 0 trở lên");
+      return;
+    }
+
+    if (isEdit && editing) {
+      updateMutation.mutate({
+        id: editing.id,
+        payload: {
+          name: name.trim(),
+          description: description.trim() || undefined,
+          imageUrl: imageUrl.trim() || undefined,
+          pointCost: pointCostValue,
+          stock: stockValue,
+          isActive,
+        },
+      }, {
+        onSuccess: () => {
+          toast.success("Đã cập nhật phần thưởng thành công");
+          onClose();
+        },
+        onError: (error) => toast.error(error.message || "Cập nhật phần thưởng thất bại"),
+      });
+      return;
+    }
+
+    createMutation.mutate({
+      name: name.trim(),
+      description: description.trim() || undefined,
+      imageUrl: imageUrl.trim() || undefined,
+      pointCost: pointCostValue,
+      stock: stockValue,
+    }, {
+      onSuccess: () => {
+        toast.success("Đã tạo phần thưởng thành công");
+        onClose();
+      },
+      onError: (error) => toast.error(error.message || "Tạo phần thưởng thất bại"),
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display">
+            {isEdit ? "Cập nhật phần thưởng" : "Tạo phần thưởng mới"}
+          </DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="rewardName">Tên phần thưởng</Label>
+            <Input
+              id="rewardName"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ví dụ: Voucher mua sắm 50k"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="rewardDescription">Mô tả</Label>
+            <Textarea
+              id="rewardDescription"
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Mô tả ngắn về phần thưởng"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="rewardImageFile">Ảnh minh họa</Label>
+            <Input
+              id="rewardImageFile"
+              type="file"
+              accept="image/*"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                await handleRewardImageUpload(file);
+                e.currentTarget.value = "";
+              }}
+              disabled={isUploadingImage}
+            />
+            {isUploadingImage && (
+              <p className="text-xs text-muted-foreground">Đang tải ảnh lên...</p>
+            )}
+            {imageUrl && (
+              <div className="space-y-2 rounded-lg border border-border p-3">
+                <img
+                  src={imageUrl}
+                  alt="Reward preview"
+                  className="h-28 w-full rounded-md border object-cover"
+                />
+                <p className="break-all text-xs text-muted-foreground">{imageUrl}</p>
+              </div>
+            )}
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="rewardPointCost">Điểm đổi</Label>
+              <Input
+                id="rewardPointCost"
+                type="number"
+                min="1"
+                step="1"
+                value={pointCost}
+                onChange={(e) => setPointCost(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="rewardStock">Tồn kho</Label>
+              <Input
+                id="rewardStock"
+                type="number"
+                min="0"
+                step="1"
+                value={stock}
+                onChange={(e) => setStock(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {isEdit && (
+            <div className="space-y-1.5">
+              <Label htmlFor="rewardStatus">Trạng thái</Label>
+              <Select value={isActive ? "true" : "false"} onValueChange={(value) => setIsActive(value === "true")}>
+                <SelectTrigger id="rewardStatus">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="true">Đang hoạt động</SelectItem>
+                  <SelectItem value="false">Tạm ngưng</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Hủy
+            </Button>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Đang lưu..." : isEdit ? "Lưu thay đổi" : "Tạo phần thưởng"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+interface RewardStockDialogProps {
+  open: boolean;
+  reward: Reward | null;
+  onClose: () => void;
+}
+
+const RewardStockDialog = ({ open, reward, onClose }: RewardStockDialogProps) => {
+  const [delta, setDelta] = useState("0");
+
+  useEffect(() => {
+    if (open) {
+      setDelta("0");
+    }
+  }, [open]);
+
+  const adjustMutation = useAdminAdjustRewardStock();
+
+  const handleSubmit = () => {
+    if (!reward) return;
+    const parsedDelta = Number(delta);
+
+    if (!Number.isInteger(parsedDelta) || parsedDelta === 0) {
+      toast.error("Vui lòng nhập số nguyên khác 0 để điều chỉnh kho");
+      return;
+    }
+
+    adjustMutation.mutate(
+      { id: reward.id, payload: { delta: parsedDelta } },
+      {
+        onSuccess: () => {
+          toast.success("Đã cập nhật tồn kho phần thưởng");
+          onClose();
+        },
+        onError: (error) => toast.error(error.message || "Cập nhật tồn kho thất bại"),
+      }
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display">Điều chỉnh tồn kho</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="rounded-lg border border-border p-3 text-sm">
+            <p className="font-medium text-foreground">{reward?.name ?? "Phần thưởng"}</p>
+            <p className="mt-1 text-muted-foreground">Tồn kho hiện tại: {reward?.stock ?? 0}</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="rewardStockDelta">Số lượng điều chỉnh</Label>
+            <Input
+              id="rewardStockDelta"
+              type="number"
+              step="1"
+              value={delta}
+              onChange={(e) => setDelta(e.target.value)}
+              placeholder="Nhập số dương để cộng, số âm để trừ"
+            />
+            <p className="text-xs text-muted-foreground">
+              Ví dụ: `5` để cộng 5 voucher, `-2` để trừ 2 voucher.
+            </p>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Hủy
+          </Button>
+          <Button onClick={handleSubmit} disabled={adjustMutation.isPending}>
+            {adjustMutation.isPending ? "Đang cập nhật..." : "Lưu tồn kho"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 const formatDate = (raw?: string | null): string => {
   if (!raw) return "-";
@@ -424,6 +728,9 @@ const AdminDashboard = () => {
   const [wardCodeEdited, setWardCodeEdited] = useState(false);
   const [quickDistrictCodeEdited, setQuickDistrictCodeEdited] = useState(false);
   const [quickWardCodeEdited, setQuickWardCodeEdited] = useState(false);
+  const [rewardFormOpen, setRewardFormOpen] = useState(false);
+  const [editingReward, setEditingReward] = useState<Reward | null>(null);
+  const [stockReward, setStockReward] = useState<Reward | null>(null);
 
   const {
     data: enterpriseApprovals,
@@ -462,6 +769,12 @@ const AdminDashboard = () => {
     queryFn: () => disputeResolutionService.getByComplaint(selectedComplaintId!),
     enabled: !!selectedComplaintId,
   });
+
+  const {
+    data: adminRewards = [],
+    isLoading: adminRewardsLoading,
+    isError: adminRewardsError,
+  } = useAdminRewards();
 
   const updateComplaintStatusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => complaintService.updateStatus(id, status),
@@ -838,6 +1151,7 @@ const AdminDashboard = () => {
           <TabsTrigger value="users">Quản lý người dùng</TabsTrigger>
           <TabsTrigger value="wastetype">Loại rác</TabsTrigger>
           <TabsTrigger value="point-rule">Quy tắc điểm</TabsTrigger>
+          <TabsTrigger value="rewards">Quà thưởng</TabsTrigger>
           <TabsTrigger value="complaints">Khiếu nại</TabsTrigger>
           <TabsTrigger value="overview">Tổng quan</TabsTrigger>
         </TabsList>
@@ -1211,6 +1525,170 @@ const AdminDashboard = () => {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="rewards">
+          <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-3">
+              <Card className="shadow-card">
+                <CardContent className="flex items-center gap-4 p-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-eco-light">
+                    <Gift className="h-6 w-6 text-eco-dark" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Tổng phần thưởng</p>
+                    <p className="font-display text-2xl font-bold text-foreground">
+                      {adminRewardsLoading ? "..." : adminRewards.length}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="shadow-card">
+                <CardContent className="flex items-center gap-4 p-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-eco-medium">
+                    <CheckCircle className="h-6 w-6 text-eco-dark" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Đang hoạt động</p>
+                    <p className="font-display text-2xl font-bold text-foreground">
+                      {adminRewardsLoading ? "..." : adminRewards.filter((reward) => reward.isActive).length}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="shadow-card">
+                <CardContent className="flex items-center gap-4 p-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-eco-teal">
+                    <Package className="h-6 w-6 text-eco-dark" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Tổng tồn kho</p>
+                    <p className="font-display text-2xl font-bold text-foreground">
+                      {adminRewardsLoading ? "..." : adminRewards.reduce((sum, reward) => sum + reward.stock, 0)}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card className="shadow-card">
+              <CardHeader>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 font-display text-base">
+                      <Gift className="h-5 w-5 text-primary" /> Quản lý quà thưởng
+                    </CardTitle>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Tạo voucher mới, cập nhật thông tin và điều chỉnh tồn kho ngay trong dashboard.
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setEditingReward(null);
+                      setRewardFormOpen(true);
+                    }}
+                  >
+                    <Plus className="mr-1 h-4 w-4" /> Thêm phần thưởng
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {adminRewardsLoading ? (
+                  <div className="space-y-3">
+                    {Array.from({ length: 3 }).map((_, index) => (
+                      <div key={index} className="rounded-lg border border-border p-4">
+                        <div className="space-y-2">
+                          <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+                          <div className="h-3 w-full animate-pulse rounded bg-muted" />
+                          <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : adminRewardsError ? (
+                  <p className="py-8 text-center text-sm text-destructive">
+                    Không thể tải danh sách phần thưởng
+                  </p>
+                ) : adminRewards.length === 0 ? (
+                  <div className="flex flex-col items-center gap-3 py-12 text-center text-muted-foreground">
+                    <Gift className="h-10 w-10 opacity-40" />
+                    <p className="text-sm">Chưa có phần thưởng nào.</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditingReward(null);
+                        setRewardFormOpen(true);
+                      }}
+                    >
+                      <Plus className="mr-1 h-4 w-4" /> Tạo phần thưởng đầu tiên
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {adminRewards.map((reward) => (
+                      <div
+                        key={reward.id}
+                        className="flex flex-col gap-3 rounded-lg border border-border p-4 sm:flex-row sm:items-start sm:justify-between"
+                      >
+                        <div className="flex min-w-0 flex-1 gap-3">
+                          {reward.imageUrl ? (
+                            <img
+                              src={reward.imageUrl}
+                              alt={reward.name}
+                              className="h-16 w-16 rounded-lg border object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-border bg-muted/40">
+                              <Gift className="h-6 w-6 text-muted-foreground/50" />
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-medium text-foreground">{reward.name}</span>
+                              <Badge variant={reward.isActive ? "default" : "secondary"}>
+                                {reward.isActive ? "Đang hoạt động" : "Tạm ngưng"}
+                              </Badge>
+                            </div>
+                            <p className="line-clamp-2 text-sm text-muted-foreground">
+                              {reward.description || "Chưa có mô tả cho phần thưởng này."}
+                            </p>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                              <span>{reward.pointCost} điểm / lượt đổi</span>
+                              <span>Tồn kho: {reward.stock}</span>
+                              {reward.createdTime && (
+                                <span>Tạo lúc {formatDate(reward.createdTime)}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingReward(reward);
+                              setRewardFormOpen(true);
+                            }}
+                          >
+                            <Pencil className="mr-1 h-3 w-3" /> Sửa
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setStockReward(reward)}
+                          >
+                            <Package className="mr-1 h-3 w-3" /> Tồn kho
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         {/* ── Complaints Tab ─────────────────────────────────── */}
@@ -1796,6 +2274,21 @@ const AdminDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <RewardFormDialog
+        open={rewardFormOpen}
+        editing={editingReward}
+        onClose={() => {
+          setRewardFormOpen(false);
+          setEditingReward(null);
+        }}
+      />
+
+      <RewardStockDialog
+        open={!!stockReward}
+        reward={stockReward}
+        onClose={() => setStockReward(null)}
+      />
 
       {/* Delete Confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
