@@ -206,6 +206,75 @@ const CollectorDashboard = () => {
     }
   };
 
+  const handleCompleteSubmitInstant = async () => {
+    if (!completingAssignment || !proofFile) return;
+
+    const assignmentId = completingAssignment.id;
+    const collectedNote = proofNote.trim() || undefined;
+    const completedAt = new Date().toISOString();
+
+    actionLocksRef.current.add(assignmentId);
+    setCardLoading(assignmentId, true);
+    setProofSubmitting(true);
+
+    try {
+      await collectorAssignmentService.updateStatus(
+        assignmentId,
+        "Collected",
+        collectedNote,
+      );
+
+      const { url, publicId } = await imageService.uploadOne(proofFile);
+
+      await collectorProofService.create({
+        assignmentId,
+        imageUrl: url,
+        publicId,
+        note: collectedNote || "Ảnh xác nhận hoàn tất thu gom",
+      });
+
+      patchAssignmentInCache(assignmentId, {
+        status: "Collected",
+        collectedAt: completedAt,
+        collectedNote,
+        lastUpdatedTime: completedAt,
+      });
+
+      setSelectedAssignment((current) =>
+        current?.id === assignmentId
+          ? {
+              ...current,
+              status: "Collected",
+              collectedAt: completedAt,
+              collectedNote,
+              lastUpdatedTime: completedAt,
+            }
+          : current
+      );
+
+      toast.success("Hoàn tất thu gom thành công!");
+      setCompletingAssignment(null);
+      setProofFile(null);
+      setProofNote("");
+
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["myAssignments"] }),
+        qc.invalidateQueries({ queryKey: ["collectorProofs", "collector", assignmentId] }),
+      ]);
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+        (err as { message?: string })?.message ??
+        "Hoàn tất thất bại";
+
+      toast.error(msg);
+    } finally {
+      actionLocksRef.current.delete(assignmentId);
+      setCardLoading(assignmentId, false);
+      setProofSubmitting(false);
+    }
+  };
+
   const selectedAssignmentStep =
     selectedAssignment && !isCompletedAssignment(selectedAssignment)
       ? getStep(selectedAssignment)
@@ -696,7 +765,7 @@ const CollectorDashboard = () => {
             >
               Huỷ
             </Button>
-            <Button disabled={!proofFile || proofSubmitting} onClick={handleCompleteSubmit}>
+            <Button disabled={!proofFile || proofSubmitting} onClick={handleCompleteSubmitInstant}>
               {proofSubmitting ? "Đang xử lý…" : "Xác nhận hoàn tất"}
             </Button>
           </DialogFooter>
