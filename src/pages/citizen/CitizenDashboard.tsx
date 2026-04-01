@@ -167,6 +167,7 @@ const CitizenDashboard = () => {
   const [rewardRedemptionPageNumber, setRewardRedemptionPageNumber] = useState(1);
   const [pointHistoryPageNumber, setPointHistoryPageNumber] = useState(1);
   const [selectedComplaintResolutionPageNumber, setSelectedComplaintResolutionPageNumber] = useState(1);
+  const [reportPageNumber, setReportPageNumber] = useState(1);
 
   // Táº¡o blob preview URLs 1 láº§n khi imageFiles thay Ä‘á»•i, cleanup Ä‘á»ƒ trÃ¡nh memory leak
   useEffect(() => {
@@ -180,6 +181,14 @@ const CitizenDashboard = () => {
   useEffect(() => {
     setSelectedComplaintResolutionPageNumber(1);
   }, [selectedComplaint?.id]);
+
+  useEffect(() => {
+    setReportPageNumber(1);
+  }, [reportStatusFilter]);
+
+  useEffect(() => {
+    setReportPageNumber(1);
+  }, [user?.id]);
 
   // Multi-select waste type state
   const [selectedWastes, setSelectedWastes] = useState<Array<{ wasteTypeId: string; quantity: number; note: string }>>([]);
@@ -369,15 +378,20 @@ const CitizenDashboard = () => {
   };
 
   // Fetch danh sÃ¡ch bÃ¡o cÃ¡o cá»§a citizen hiá»‡n táº¡i
-  const { data: rawReports = [], isLoading: loadingReports } = useQuery({
-    queryKey: ["wasteReports", user?.id],
-    queryFn: () => wasteReportService.getAll({ CitizenId: user?.id }),
+  const { data: reportPageData, isLoading: loadingReports } = useQuery({
+    queryKey: ["wasteReports", user?.id, reportPageNumber],
+    queryFn: () =>
+      wasteReportService.getPaged({
+        CitizenId: user?.id,
+        PageNumber: reportPageNumber,
+        PageSize: 10,
+      }),
     enabled: !!user?.id,
     staleTime: 0,
   });
 
   // Filter client-side phÃ²ng trÆ°á»ng há»£p BE khÃ´ng filter Ä‘Ãºng CitizenId
-  const reports = rawReports.filter(
+  const reports = (reportPageData?.items ?? []).filter(
     (r) => !r.citizenId || r.citizenId === user?.id
   );
 
@@ -401,6 +415,8 @@ const CitizenDashboard = () => {
         return true;
     }
   });
+  const reportTotalCount = reportPageData?.totalCount ?? 0;
+  const reportPageSize = reportPageData?.pageSize ?? 10;
 
   const { data: complaintData, isLoading: loadingComplaints } = useQuery({
     queryKey: ["complaints", "my", user?.id, complaintPageNumber],
@@ -1186,7 +1202,6 @@ const CitizenDashboard = () => {
               {filteredReports.map((r) => {
                 const normalizedStatus = (r.status || "").toUpperCase();
                 const st = statusMap[normalizedStatus] || { label: r.status, variant: "secondary" as const };
-                // Fix Invalid Date
                 const dateStr = r.createdTime ? (() => {
                   const d = new Date(r.createdTime);
                   return isNaN(d.getTime()) ? "" : d.toLocaleDateString("vi-VN");
@@ -1244,6 +1259,13 @@ const CitizenDashboard = () => {
                   </Card>
                 );
               })}
+
+              <SimplePagination
+                pageNumber={reportPageData?.pageNumber ?? reportPageNumber}
+                pageSize={reportPageSize}
+                totalCount={reportTotalCount}
+                onPageChange={setReportPageNumber}
+              />
             </div>
           )}
         </TabsContent>

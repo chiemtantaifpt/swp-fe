@@ -56,6 +56,13 @@ export interface WasteReportListParams {
   PageSize?: number;
 }
 
+export interface PagedWasteReportResult {
+  items: WasteReport[];
+  totalCount: number;
+  pageNumber: number;
+  pageSize: number;
+}
+
 export const wasteReportService = {
   // POST /api/WasteReport — application/json
   create: async (data: CreateWasteReportRequest): Promise<WasteReport> => {
@@ -76,6 +83,54 @@ export const wasteReportService = {
     if (Array.isArray(data?.data)) return data.data;
     // Fallback an toàn
     return [];
+  },
+
+  getPaged: async (params?: WasteReportListParams): Promise<PagedWasteReportResult> => {
+    const response = await api.get("/WasteReport", { params });
+    const data = response.data;
+
+    if (Array.isArray(data)) {
+      return {
+        items: data,
+        totalCount: data.length,
+        pageNumber: params?.PageNumber ?? 1,
+        pageSize: params?.PageSize ?? data.length ?? 10,
+      };
+    }
+
+    if (Array.isArray(data?.items)) {
+      return {
+        items: data.items,
+        totalCount: data.totalCount ?? data.total ?? data.items.length,
+        pageNumber: data.pageNumber ?? params?.PageNumber ?? 1,
+        pageSize: data.pageSize ?? params?.PageSize ?? data.items.length ?? 10,
+      };
+    }
+
+    if (Array.isArray(data?.data?.items)) {
+      return {
+        items: data.data.items,
+        totalCount: data.data.totalCount ?? data.data.total ?? data.data.items.length,
+        pageNumber: data.data.pageNumber ?? params?.PageNumber ?? 1,
+        pageSize: data.data.pageSize ?? params?.PageSize ?? data.data.items.length ?? 10,
+      };
+    }
+
+    if (Array.isArray(data?.data)) {
+      return {
+        items: data.data,
+        totalCount: data.data.length,
+        pageNumber: params?.PageNumber ?? 1,
+        pageSize: params?.PageSize ?? data.data.length ?? 10,
+      };
+    }
+
+    return {
+      items: [],
+      totalCount: 0,
+      pageNumber: params?.PageNumber ?? 1,
+      pageSize: params?.PageSize ?? 10,
+    };
   },
 
   // GET /api/WasteReport/{id} — Lấy chi tiết 1 báo cáo
