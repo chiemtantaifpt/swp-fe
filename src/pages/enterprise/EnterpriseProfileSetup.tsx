@@ -67,7 +67,7 @@ const EnterpriseProfileSetup = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!licenseFile) {
-      toast.error("Vui l??ng t???i l??n gi???y ph??p m??i tr?????ng");
+      toast.error("Vui lòng tải lên giấy phép môi trường");
       return;
     }
 
@@ -85,7 +85,7 @@ const EnterpriseProfileSetup = () => {
         const doc = await enterpriseDocumentsService.upload(0, licenseFile);
         licenseFileId = doc.id;
       } catch {
-        toast.warning("H??? s?? ???? t???o nh??ng t???i gi???y ph??p th???t b???i. B???n c?? th??? c???p nh???t sau.");
+        toast.warning("Hồ sơ đã được tạo nhưng tải giấy phép thất bại. Bạn có thể cập nhật sau.");
       }
 
       // Step 3: Persist which uploaded document is the environment license
@@ -100,11 +100,11 @@ const EnterpriseProfileSetup = () => {
         note: "Da hoan tat ho so",
       });
 
-      toast.success("????ng k?? h??? s?? doanh nghi???p th??nh c??ng! ??ang ch??? ph?? duy???t.");
+      toast.success("Đăng ký hồ sơ doanh nghiệp thành công! Đang chờ phê duyệt.");
       await qc.invalidateQueries({ queryKey: ["enterpriseProfile"] });
       await qc.invalidateQueries({ queryKey: ["enterpriseProfile", "documents"] });
     } catch {
-      toast.error("????ng k?? th???t b???i. Vui l??ng th??? l???i.");
+      toast.error("Đăng ký thất bại. Vui lòng thử lại.");
     } finally {
       setSubmitting(false);
     }
@@ -359,7 +359,6 @@ const EnterpriseProfileSetup = () => {
 
         {/* Approval status note */}
         <div className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-          <Badge variant="outline" className="text-xs">PendingApproval</Badge>
           <span>Hồ sơ chờ xét duyệt bởi quản trị viên</span>
         </div>
       </div>

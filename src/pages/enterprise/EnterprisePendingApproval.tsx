@@ -5,10 +5,18 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { recyclingEnterpriseService, RecyclingEnterprise } from "@/services/enterpriseConfig";
+import { RecyclingEnterprise } from "@/services/enterpriseConfig";
 import {
-  Clock, XCircle, CheckCircle2, RefreshCw, Building2, FileText,
-  User, MapPin, Hash, Briefcase,
+  Clock,
+  XCircle,
+  CheckCircle2,
+  RefreshCw,
+  Building2,
+  FileText,
+  User,
+  MapPin,
+  Hash,
+  Briefcase,
 } from "lucide-react";
 
 interface Props {
@@ -24,7 +32,7 @@ const STATUS_CONFIG: Record<
     color: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950 dark:text-amber-200",
     icon: <Clock className="h-5 w-5 text-amber-500" />,
     description:
-      "Hồ sơ của bạn đã được gửi và đang chờ quản trị viên xét duyệt. Quá trình này thường mất 1–3 ngày làm việc.",
+      "Hồ sơ của bạn đã được gửi và đang chờ quản trị viên xét duyệt. Quá trình này thường mất 1-3 ngày làm việc.",
   },
   Rejected: {
     label: "Bị từ chối",
@@ -60,7 +68,6 @@ const EnterprisePendingApproval = ({ profile }: Props) => {
   return (
     <DashboardLayout>
       <div className="mx-auto max-w-2xl py-4">
-        {/* Header */}
         <div className="mb-8 text-center">
           <div className="mb-3 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-eco-light">
             <Building2 className="h-7 w-7 text-eco-dark" />
@@ -71,7 +78,6 @@ const EnterprisePendingApproval = ({ profile }: Props) => {
           </p>
         </div>
 
-        {/* Status banner */}
         <div className={`mb-6 flex items-start gap-3 rounded-xl border p-4 ${cfg.color}`}>
           <div className="mt-0.5 shrink-0">{cfg.icon}</div>
           <div>
@@ -80,7 +86,6 @@ const EnterprisePendingApproval = ({ profile }: Props) => {
           </div>
         </div>
 
-        {/* Rejection reason */}
         {profile.rejectionReason && (
           <Card className="mb-6 border-red-200 shadow-card dark:border-red-800">
             <CardHeader className="pb-2">
@@ -94,7 +99,6 @@ const EnterprisePendingApproval = ({ profile }: Props) => {
           </Card>
         )}
 
-        {/* Profile summary */}
         <Card className="mb-6 shadow-card">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 font-display text-base">
@@ -109,7 +113,10 @@ const EnterprisePendingApproval = ({ profile }: Props) => {
               { icon: User, label: "Người đại diện pháp lý", value: profile.legalRepresentative },
               { icon: Briefcase, label: "Chức vụ", value: profile.representativePosition },
             ].map(({ icon: Icon, label, value }) => (
-              <div key={label} className="flex items-start justify-between gap-4 border-b border-border pb-2.5 last:border-0 last:pb-0">
+              <div
+                key={label}
+                className="flex items-start justify-between gap-4 border-b border-border pb-2.5 last:border-0 last:pb-0"
+              >
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Icon className="h-3.5 w-3.5 shrink-0" />
                   <span>{label}</span>
@@ -122,8 +129,11 @@ const EnterprisePendingApproval = ({ profile }: Props) => {
 
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Trạng thái phê duyệt</span>
-              <Badge variant="outline" className="text-xs">{profile.approvalStatus}</Badge>
+              <Badge variant="outline" className="text-xs">
+                {cfg.label}
+              </Badge>
             </div>
+
             {profile.submittedAt && (
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Ngày nộp hồ sơ</span>
@@ -135,7 +145,6 @@ const EnterprisePendingApproval = ({ profile }: Props) => {
           </CardContent>
         </Card>
 
-        {/* Actions */}
         <div className="flex flex-col items-center gap-3">
           <Button
             variant="outline"
@@ -144,7 +153,7 @@ const EnterprisePendingApproval = ({ profile }: Props) => {
             className="min-w-44"
           >
             <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-            {refreshing ? "Đang kiểm tra…" : "Kiểm tra trạng thái"}
+            {refreshing ? "Đang kiểm tra..." : "Kiểm tra trạng thái"}
           </Button>
           <p className="text-xs text-muted-foreground">
             Nhấn để tải lại trạng thái phê duyệt mới nhất từ hệ thống.

@@ -84,6 +84,17 @@ const suggestedCategoryMapByNumber: Record<number, { category: number; label: st
   3: { category: 3, label: "Khác" },
 };
 
+const reportStatusFilterOptions = [
+  { value: "all", label: "Tất cả trạng thái" },
+  { value: "pending", label: "Chờ xử lý" },
+  { value: "accepted", label: "Đã tiếp nhận" },
+  { value: "assigned", label: "Đã điều phối" },
+  { value: "collected", label: "Đã thu gom" },
+  { value: "completed", label: "Hoàn thành" },
+] as const;
+
+type ReportStatusFilterValue = (typeof reportStatusFilterOptions)[number]["value"];
+
 const CitizenComplaintCard = ({
   complaint,
   reportSummary,
@@ -138,6 +149,7 @@ const CitizenDashboard = () => {
   const [open, setOpen] = useState(false);
   const [confirmCreateOpen, setConfirmCreateOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<WasteReport | null>(null);
+  const [reportStatusFilter, setReportStatusFilter] = useState<ReportStatusFilterValue>("all");
   const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
   const [imageSuggestion, setImageSuggestion] = useState<{
     categoryLabel?: string;
@@ -247,14 +259,14 @@ const CitizenDashboard = () => {
     }
 
     if (suggestedCategory && suggestedCategoryMap[suggestedCategory]) {
-      toast.success(`Há»‡ thá»‘ng gá»£i Ã½ nhÃ³m rÃ¡c: ${suggestedCategoryMap[suggestedCategory].label}`);
+      toast.success(`Hệ thống gợi ý nhóm rác: ${suggestedCategoryMap[suggestedCategory].label}`);
     }
   };
 
   const handleSelectImages = async (files: File[]) => {
     if (files.length === 0) return;
     if (imageFiles.length + files.length > 5) {
-      toast.error("Ch??? ???????c t???i l??n t???i ??a 5 ???nh");
+      toast.error("Chỉ được tải lên tối đa 5 ảnh");
       return;
     }
 
@@ -306,22 +318,22 @@ const CitizenDashboard = () => {
         if (result.failureCount > 0) {
           const errorText =
             failedResults.map((entry) => entry.fileName + ": " + entry.error).join(" | ") ||
-            ("Upload ???nh th???t b???i " + result.failureCount + "/" + files.length + " file");
+            ("Upload ảnh thất bại " + result.failureCount + "/" + files.length + " file");
 
           if (result.successCount > 0) {
-            toast.warning("???? t???i l??n " + result.successCount + " ???nh, nh??ng c?? l???i: " + errorText);
+            toast.warning("Đã tải lên " + result.successCount + " ảnh, nhưng có lỗi: " + errorText);
           } else {
             toast.error(errorText);
           }
           return;
         }
 
-        toast.success("???? t???i l??n " + result.successCount + " ???nh th??nh c??ng");
+        toast.success("Đã tải lên " + result.successCount + " ảnh thành công");
       }
     } catch (error) {
       const message =
         (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
-        "Upload ???nh th???t b???i, vui l??ng th??? l???i";
+        "Upload ảnh thất bại, vui lòng thử lại";
       toast.error(message);
     } finally {
       setIsUploadingImages(false);
@@ -337,7 +349,7 @@ const CitizenDashboard = () => {
     }
     if (removedImage?.publicId) {
       void imageService.deleteOne(removedImage.publicId).catch(() => {
-        toast.error("KhÃ´ng thá»ƒ xÃ³a áº£nh Ä‘Ã£ táº£i lÃªn");
+        toast.error("Không thể xóa ảnh đã tải lên");
       });
     }
   };
@@ -368,6 +380,27 @@ const CitizenDashboard = () => {
   const reports = rawReports.filter(
     (r) => !r.citizenId || r.citizenId === user?.id
   );
+
+  const filteredReports = reports.filter((report) => {
+    if (reportStatusFilter === "all") return true;
+
+    const normalizedStatus = (report.status || "").toUpperCase();
+
+    switch (reportStatusFilter) {
+      case "pending":
+        return normalizedStatus === "PENDING";
+      case "accepted":
+        return ["ACCEPTED", "PROCESSING", "ONTHEWAY"].includes(normalizedStatus);
+      case "assigned":
+        return normalizedStatus === "ASSIGNED";
+      case "collected":
+        return normalizedStatus === "COLLECTED";
+      case "completed":
+        return ["VERIFIED", "COMPLETED"].includes(normalizedStatus);
+      default:
+        return true;
+    }
+  });
 
   const { data: complaintData, isLoading: loadingComplaints } = useQuery({
     queryKey: ["complaints", "my", user?.id, complaintPageNumber],
@@ -497,7 +530,7 @@ const CitizenDashboard = () => {
       closeComplaintDialog();
     },
     onError: (error: Error) => {
-      toast.error(error.message || "Gá»­i khiáº¿u náº¡i tháº¥t báº¡i");
+      toast.error(error.message || "Gửi khiếu nại thất bại");
     },
   });
 
@@ -505,7 +538,7 @@ const CitizenDashboard = () => {
 
   const getGPS = () => {
     if (!navigator.geolocation) {
-      toast.error("TrÃ¬nh duyá»‡t khÃ´ng há»— trá»£ GPS");
+      toast.error("Trình duyệt không hỗ trợ GPS");
       return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -513,7 +546,7 @@ const CitizenDashboard = () => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         setForm((f) => ({ ...f, latitude: lat, longitude: lng }));
-        toast.success("ÄÃ£ láº¥y tá»a Ä‘á»™ GPS thÃ nh cÃ´ng!");
+        toast.success("Đã lấy tọa độ GPS thành công!");
         // Reverse geocode
         try {
           const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=vi`);
@@ -523,7 +556,7 @@ const CitizenDashboard = () => {
           setLocationName(name || null);
         } catch { setLocationName(null); }
       },
-      () => toast.error("KhÃ´ng thá»ƒ láº¥y tá»a Ä‘á»™ GPS. Vui lÃ²ng nháº­p Ä‘á»‹a chá»‰ thá»§ cÃ´ng.")
+      () => toast.error("Không thể lấy tọa độ GPS. Vui lòng nhập địa chỉ thủ công.")
     );
   };
 
@@ -572,7 +605,7 @@ const CitizenDashboard = () => {
       } else {
         // Add with default quantity 1 and empty note
         if (prev.length >= 5) {
-          toast.error("Chá»‰ Ä‘Æ°á»£c chá»n tá»‘i Ä‘a 5 loáº¡i rÃ¡c");
+          toast.error("Chỉ được chọn tối đa 5 loại rác");
           return prev;
         }
         return [...prev, { wasteTypeId: id, quantity: 1, note: "" }];
@@ -769,32 +802,45 @@ const CitizenDashboard = () => {
         <TabsContent value="reports">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-display text-lg font-semibold text-foreground">Lịch sử báo cáo</h2>
-            <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) closeCreateDialog(); else setOpen(true); }}>
-              <DialogTrigger asChild>
-                <Button size="sm"><Plus className="mr-1 h-4 w-4" /> Tạo báo cáo mới</Button>
-              </DialogTrigger>
-              <DialogContent className="w-[calc(100vw-1rem)] max-w-md overflow-y-auto" style={{ maxHeight: "90vh" }}>
-                <DialogHeader>
-                  <DialogTitle className="font-display">Tạo báo cáo rác mới</DialogTitle>
-                </DialogHeader>
-                <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
-                  Ví dụ: ảnh chai nước suối có thể được gợi ý là nhóm <span className="font-medium text-foreground">Tái chế</span> và hệ thống có thể tự chọn sẵn loại rác phù hợp nếu nhận diện được.
-                </div>
-                {(imageSuggestion?.categoryLabel || imageSuggestion?.wasteTypeName) && (
-                  <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
-                    {imageSuggestion.wasteTypeName ? (
-                      <>
-                        Gợi ý từ ảnh: <span className="font-semibold">{imageSuggestion.wasteTypeName}</span>
-                        {imageSuggestion.categoryLabel ? <> thuộc nhóm <span className="font-semibold">{imageSuggestion.categoryLabel}</span>.</> : "."}
-                      </>
-                    ) : (
-                      <>
-                        Gợi ý từ ảnh: <span className="font-semibold">{imageSuggestion.categoryLabel}</span>.
-                      </>
-                    )}
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Select value={reportStatusFilter} onValueChange={(value) => setReportStatusFilter(value as ReportStatusFilterValue)}>
+                <SelectTrigger className="w-full sm:w-[220px]">
+                  <SelectValue placeholder="Lọc theo trạng thái" />
+                </SelectTrigger>
+                <SelectContent>
+                  {reportStatusFilterOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) closeCreateDialog(); else setOpen(true); }}>
+                <DialogTrigger asChild>
+                  <Button size="sm"><Plus className="mr-1 h-4 w-4" /> Tạo báo cáo mới</Button>
+                </DialogTrigger>
+                <DialogContent className="w-[calc(100vw-1rem)] max-w-md overflow-y-auto" style={{ maxHeight: "90vh" }}>
+                  <DialogHeader>
+                    <DialogTitle className="font-display">Tạo báo cáo rác mới</DialogTitle>
+                  </DialogHeader>
+                  <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+                    Ví dụ: ảnh chai nước suối có thể được gợi ý là nhóm <span className="font-medium text-foreground">Tái chế</span> và hệ thống có thể tự chọn sẵn loại rác phù hợp nếu nhận diện được.
                   </div>
-                )}
-                <form onSubmit={handleCreateReport} className="space-y-4 pb-2">
+                  {(imageSuggestion?.categoryLabel || imageSuggestion?.wasteTypeName) && (
+                    <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
+                      {imageSuggestion.wasteTypeName ? (
+                        <>
+                          Gợi ý từ ảnh: <span className="font-semibold">{imageSuggestion.wasteTypeName}</span>
+                          {imageSuggestion.categoryLabel ? <> thuộc nhóm <span className="font-semibold">{imageSuggestion.categoryLabel}</span>.</> : "."}
+                        </>
+                      ) : (
+                        <>
+                          Gợi ý từ ảnh: <span className="font-semibold">{imageSuggestion.categoryLabel}</span>.
+                        </>
+                      )}
+                    </div>
+                  )}
+                  <form onSubmit={handleCreateReport} className="space-y-4 pb-2">
 
                   {/* â”€â”€ Loáº¡i rÃ¡c multi-select â”€â”€ */}
                   <div>
@@ -1115,24 +1161,29 @@ const CitizenDashboard = () => {
                       )}
                     </Tooltip>
                   </TooltipProvider>
-                </form>
-              </DialogContent>
-            </Dialog>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
 
           {loadingReports ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
-          ) : reports.length === 0 ? (
+          ) : filteredReports.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-12 text-center">
               <MapPin className="mb-2 h-8 w-8 text-muted-foreground" />
-              <p className="font-medium text-foreground">Chưa có báo cáo nào</p>
-              <p className="text-sm text-muted-foreground">Nhấn "Tạo báo cáo mới" để bắt đầu</p>
+              <p className="font-medium text-foreground">
+                {reports.length === 0 ? "Chưa có báo cáo nào" : "Không có báo cáo phù hợp với bộ lọc"}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {reports.length === 0 ? 'Nhấn "Tạo báo cáo mới" để bắt đầu' : "Hãy thử chọn trạng thái khác để xem thêm báo cáo"}
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
-              {reports.map((r) => {
+              {filteredReports.map((r) => {
                 const normalizedStatus = (r.status || "").toUpperCase();
                 const st = statusMap[normalizedStatus] || { label: r.status, variant: "secondary" as const };
                 // Fix Invalid Date

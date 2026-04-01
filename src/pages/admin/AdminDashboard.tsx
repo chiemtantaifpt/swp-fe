@@ -25,7 +25,6 @@ import { disputeResolutionService } from "@/services/disputeResolution";
 import { pointRuleService, PointRule } from "@/services/pointRule";
 import { adminUserManagementService } from "@/services/adminUserManagement";
 import type { Reward } from "@/services/reward.types";
-import { imageService } from "@/services/image";
 import {
   useAdminAdjustRewardStock,
   useAdminCreateReward,
@@ -401,7 +400,7 @@ const RewardFormDialog = ({ open, editing, onClose }: RewardFormDialogProps) => 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [imageUrl, setImageUrl] = useState("");
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [pointCost, setPointCost] = useState("1");
   const [stock, setStock] = useState("0");
   const [isActive, setIsActive] = useState(true);
@@ -411,6 +410,7 @@ const RewardFormDialog = ({ open, editing, onClose }: RewardFormDialogProps) => 
     setName(editing?.name ?? "");
     setDescription(editing?.description ?? "");
     setImageUrl(editing?.imageUrl ?? "");
+    setImageFile(null);
     setPointCost(String(editing?.pointCost ?? 1));
     setStock(String(editing?.stock ?? 0));
     setIsActive(editing?.isActive ?? true);
@@ -419,23 +419,7 @@ const RewardFormDialog = ({ open, editing, onClose }: RewardFormDialogProps) => 
   const createMutation = useAdminCreateReward();
   const updateMutation = useAdminUpdateReward();
 
-  const isPending = createMutation.isPending || updateMutation.isPending || isUploadingImage;
-
-  const handleRewardImageUpload = async (file?: File | null) => {
-    if (!file) return;
-
-    setIsUploadingImage(true);
-    try {
-      const result = await imageService.uploadOne(file);
-      setImageUrl(result.url);
-      toast.success("Đã tải ảnh phần thưởng lên thành công");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Tải ảnh phần thưởng thất bại";
-      toast.error(message);
-    } finally {
-      setIsUploadingImage(false);
-    }
-  };
+  const isPending = createMutation.isPending || updateMutation.isPending;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -482,7 +466,7 @@ const RewardFormDialog = ({ open, editing, onClose }: RewardFormDialogProps) => 
     createMutation.mutate({
       name: name.trim(),
       description: description.trim() || undefined,
-      imageUrl: imageUrl.trim() || undefined,
+      imageFile: imageFile ?? undefined,
       pointCost: pointCostValue,
       stock: stockValue,
     }, {
@@ -530,16 +514,18 @@ const RewardFormDialog = ({ open, editing, onClose }: RewardFormDialogProps) => 
               id="rewardImageFile"
               type="file"
               accept="image/*"
-              onChange={async (e) => {
+              onChange={(e) => {
                 const file = e.target.files?.[0];
-                await handleRewardImageUpload(file);
+                setImageFile(file ?? null);
+                if (file) {
+                  setImageUrl(URL.createObjectURL(file));
+                } else {
+                  setImageUrl(editing?.imageUrl ?? "");
+                }
                 e.currentTarget.value = "";
               }}
-              disabled={isUploadingImage}
+              disabled={isPending}
             />
-            {isUploadingImage && (
-              <p className="text-xs text-muted-foreground">Đang tải ảnh lên...</p>
-            )}
             {imageUrl && (
               <div className="space-y-2 rounded-lg border border-border p-3">
                 <img
@@ -547,7 +533,9 @@ const RewardFormDialog = ({ open, editing, onClose }: RewardFormDialogProps) => 
                   alt="Reward preview"
                   className="h-28 w-full rounded-md border object-cover"
                 />
-                <p className="break-all text-xs text-muted-foreground">{imageUrl}</p>
+                <p className="break-all text-xs text-muted-foreground">
+                  {imageFile ? imageFile.name : imageUrl}
+                </p>
               </div>
             )}
           </div>
@@ -851,8 +839,12 @@ const AdminDashboard = () => {
     onSuccess: () => {
       toast.success("Duyệt doanh nghiệp thành công");
       qc.invalidateQueries({ queryKey: ["enterpriseApprovals"] });
+      setApprovingEnterpriseId(null);
     },
-    onError: () => toast.error("Duyệt doanh nghiệp thất bại"),
+    onError: () => {
+      setApprovingEnterpriseId(null);
+      toast.error("Duyệt doanh nghiệp thất bại");
+    },
   });
 
   const rejectMutation = useMutation({
@@ -861,11 +853,16 @@ const AdminDashboard = () => {
     onSuccess: () => {
       toast.success("Từ chối doanh nghiệp thành công");
       qc.invalidateQueries({ queryKey: ["enterpriseApprovals"] });
+      setRejectingEnterpriseId(null);
     },
-    onError: () => toast.error("Từ chối doanh nghiệp thất bại"),
+    onError: () => {
+      setRejectingEnterpriseId(null);
+      toast.error("Từ chối doanh nghiệp thất bại");
+    },
   });
 
   const handleApproveEnterprise = (enterpriseId: string) => {
+    setApprovingEnterpriseId(enterpriseId);
     approveMutation.mutate(enterpriseId);
   };
 
@@ -888,11 +885,13 @@ const AdminDashboard = () => {
     }
     if (!rejectEnterpriseId) return;
 
+    setRejectingEnterpriseId(rejectEnterpriseId);
     rejectMutation.mutate({ enterpriseId: rejectEnterpriseId, reason: rejectReason.trim() }, {
       onSuccess: () => {
         closeRejectDialog();
       },
       onError: () => {
+        setRejectingEnterpriseId(null);
         // Đã có toast lỗi chung
       }
     });
@@ -900,6 +899,8 @@ const AdminDashboard = () => {
 
   const [selectedEnterpriseId, setSelectedEnterpriseId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [approvingEnterpriseId, setApprovingEnterpriseId] = useState<string | null>(null);
+  const [rejectingEnterpriseId, setRejectingEnterpriseId] = useState<string | null>(null);
 
   const [rejectEnterpriseId, setRejectEnterpriseId] = useState<string | null>(null);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -1235,11 +1236,20 @@ const AdminDashboard = () => {
                           </Button>
                           {item.approvalStatus === "PendingApproval" ? (
                             <>
-                              <Button size="sm" onClick={() => handleApproveEnterprise(item.id)} disabled={approveMutation.isPending}>
-                                {approveMutation.isPending ? "Đang xử lý..." : "Duyệt"}
+                              <Button
+                                size="sm"
+                                onClick={() => handleApproveEnterprise(item.id)}
+                                disabled={approveMutation.isPending || rejectMutation.isPending}
+                              >
+                                {approveMutation.isPending && approvingEnterpriseId === item.id ? "Đang xử lý..." : "Duyệt"}
                               </Button>
-                              <Button size="sm" variant="destructive" onClick={() => openRejectDialog(item.id)} disabled={rejectMutation.isPending}>
-                                {rejectMutation.isPending ? "Đang xử lý..." : "Từ chối"}
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => openRejectDialog(item.id)}
+                                disabled={approveMutation.isPending || rejectMutation.isPending}
+                              >
+                                {rejectMutation.isPending && rejectingEnterpriseId === item.id ? "Đang xử lý..." : "Từ chối"}
                               </Button>
                             </>
                           ) : (
@@ -1312,6 +1322,9 @@ const AdminDashboard = () => {
                     {selectedEnterprise.documents && selectedEnterprise.documents.length > 0 ? (
                       <div className="space-y-2">
                         {selectedEnterprise.documents.map((doc) => (
+                          (() => {
+                            const documentUrl = doc.imageUrl ?? doc.fileUrl;
+                            return (
                           <div key={doc.id} className="rounded-md border border-border p-3 bg-slate-50">
                             <p className="font-medium text-sm">{doc.originalFileName}</p>
                             <div className="mt-1 text-xs text-muted-foreground grid gap-1 sm:grid-cols-2">
@@ -1320,15 +1333,18 @@ const AdminDashboard = () => {
                               <span>Tải lên: {formatDate(doc.uploadedAt)}</span>
                               <span>Trạng thái xóa: {doc.isDeleted ? "Đã xóa" : "Hoạt động"}</span>
                             </div>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <Button size="sm" variant="outline" asChild>
-                                <a href={doc.fileUrl} target="_blank" rel="noreferrer">Xem file</a>
-                              </Button>
-                              <Button size="sm" variant="secondary" asChild>
-                                <a href={doc.fileUrl} target="_blank" rel="noreferrer" download>Tải xuống</a>
-                              </Button>
-                            </div>
+                            {documentUrl ? (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <Button size="sm" variant="outline" asChild>
+                                  <a href={documentUrl} target="_blank" rel="noreferrer">Xem file</a>
+                                </Button>
+                              </div>
+                            ) : (
+                              <p className="mt-2 text-xs text-muted-foreground">Tài liệu chưa có đường dẫn hiển thị.</p>
+                            )}
                           </div>
+                            );
+                          })()
                         ))}
                       </div>
                     ) : (
@@ -1847,54 +1863,8 @@ const AdminDashboard = () => {
 
         {/* ── Overview Tab ───────────────────────────────────── */}
         <TabsContent value="overview">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4">
             <Card className="shadow-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 font-display text-base">
-                  <BarChart3 className="h-5 w-5 text-primary" /> Theo khu vực
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {[
-                  { area: "Quận 1", requests: 156, pct: 100 },
-                  { area: "Quận 3", requests: 120, pct: 77 },
-                  { area: "Quận 7", requests: 98, pct: 63 },
-                  { area: "Quận Bình Thạnh", requests: 85, pct: 54 },
-                  { area: "Quận Phú Nhuận", requests: 72, pct: 46 },
-                ].map((a, i) => (
-                  <div key={i} className="mb-3">
-                    <div className="mb-1 flex justify-between text-sm">
-                      <span className="text-foreground">{a.area}</span>
-                      <span className="text-muted-foreground">{a.requests} đơn</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-muted">
-                      <div className="h-2 rounded-full bg-primary" style={{ width: `${a.pct}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-            <Card className="shadow-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 font-display text-base">
-                  <Users className="h-5 w-5 text-primary" /> Phân bố người dùng
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {[
-                  { role: "Công dân", count: 1089, icon: "👤" },
-                  { role: "Doanh nghiệp tái chế", count: 23, icon: "🏭" },
-                  { role: "Người thu gom", count: 118, icon: "🚛" },
-                  { role: "Quản trị viên", count: 4, icon: "🛡️" },
-                ].map((r, i) => (
-                  <div key={i} className="flex items-center justify-between border-b border-border pb-2 last:border-0">
-                    <span className="text-sm text-foreground">{r.icon} {r.role}</span>
-                    <span className="font-display text-sm font-bold text-foreground">{r.count}</span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-            <Card className="shadow-card sm:col-span-2">
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <CardTitle className="flex items-center gap-2 font-display text-base">
@@ -2165,18 +2135,9 @@ const AdminDashboard = () => {
                 placeholder="VD: Quận 7"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="districtCode">Mã quận/huyện</Label>
-              <Input
-                id="districtCode"
-                value={districtCode}
-                onChange={(e) => {
-                  setDistrictCodeEdited(true);
-                  setDistrictCode(e.target.value.toUpperCase());
-                }}
-                placeholder="Tự tạo từ tên, VD: QUAN_7"
-              />
-            </div>
+            <p className="text-xs text-muted-foreground">
+              Mã quận/huyện sẽ được hệ thống tự tạo từ tên đã nhập.
+            </p>
             <div className="space-y-1.5">
               <Label htmlFor="provinceCode">Mã tỉnh/thành</Label>
               <Input id="provinceCode" value={provinceCode} onChange={(e) => setProvinceCode(e.target.value)} placeholder="VD: 79" />
@@ -2230,18 +2191,9 @@ const AdminDashboard = () => {
                 placeholder="VD: Phường 1"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="wardCode">Mã phường/xã</Label>
-              <Input
-                id="wardCode"
-                value={wardCode}
-                onChange={(e) => {
-                  setWardCodeEdited(true);
-                  setWardCode(e.target.value.toUpperCase());
-                }}
-                placeholder="Tự tạo từ tên, VD: PHUONG_1"
-              />
-            </div>
+            <p className="text-xs text-muted-foreground">
+              Mã phường/xã sẽ được hệ thống tự tạo từ tên đã nhập.
+            </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setWardDialogOpen(false)}>Hủy</Button>
@@ -2281,18 +2233,9 @@ const AdminDashboard = () => {
                   placeholder="VD: Quận 7"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="quickDistrictCode">Mã</Label>
-                <Input
-                  id="quickDistrictCode"
-                  value={quickDistrictCode}
-                  onChange={(e) => {
-                    setQuickDistrictCodeEdited(true);
-                    setQuickDistrictCode(e.target.value.toUpperCase());
-                  }}
-                  placeholder="Tự tạo từ tên, VD: QUAN_7"
-                />
-              </div>
+              <p className="text-xs text-muted-foreground">
+                Mã sẽ được tự tạo từ tên quận/huyện.
+              </p>
               <div className="space-y-1.5">
                 <Label htmlFor="quickProvinceCode">Mã tỉnh/thành</Label>
                 <Input id="quickProvinceCode" value={quickProvinceCode} onChange={(e) => setQuickProvinceCode(e.target.value)} placeholder="VD: 79" />
@@ -2310,18 +2253,9 @@ const AdminDashboard = () => {
                   placeholder="VD: Phường 1"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="quickWardCode">Mã</Label>
-                <Input
-                  id="quickWardCode"
-                  value={quickWardCode}
-                  onChange={(e) => {
-                    setQuickWardCodeEdited(true);
-                    setQuickWardCode(e.target.value.toUpperCase());
-                  }}
-                  placeholder="Tự tạo từ tên, VD: PHUONG_1"
-                />
-              </div>
+              <p className="text-xs text-muted-foreground">
+                Mã sẽ được tự tạo từ tên phường/xã.
+              </p>
             </div>
           </div>
           <DialogFooter>

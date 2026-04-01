@@ -20,7 +20,7 @@ export interface RewardRedemption {
 export interface CreateRewardPayload {
   name: string;
   description?: string;
-  imageUrl?: string;
+  imageFile?: File;
   pointCost: number;
   stock: number;
 }

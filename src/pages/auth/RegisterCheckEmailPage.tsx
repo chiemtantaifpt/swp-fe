@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { ArrowRight, MailCheck, ShieldCheck } from "lucide-react";
+import { ArrowRight, MailCheck } from "lucide-react";
 import AuthLayout from "@/components/auth/AuthLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,18 +43,6 @@ export default function RegisterCheckEmailPage() {
             <p className="mt-2">
               Sau khi xác thực thành công, hệ thống sẽ hướng dẫn bước tiếp theo phù hợp với loại tài khoản của bạn.
             </p>
-          </div>
-
-          <div className="rounded-xl border border-border/70 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-            <div className="flex items-start gap-3">
-              <ShieldCheck className="mt-0.5 h-4 w-4 text-eco-dark" />
-              <div className="space-y-1">
-                <p className="font-medium text-foreground">Lưu ý</p>
-                <p>
-                  Nếu chưa thấy email, hãy kiểm tra thư mục spam hoặc quảng cáo. Hiện tại hệ thống chưa hỗ trợ gửi lại email xác thực từ FE.
-                </p>
-              </div>
-            </div>
           </div>
 
           <div className="flex flex-col gap-3">

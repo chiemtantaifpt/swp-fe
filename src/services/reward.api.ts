@@ -209,7 +209,22 @@ export const adminGetRewardById = async (id: string): Promise<Reward> => {
 
 export const adminCreateReward = async (payload: CreateRewardPayload): Promise<Reward> => {
   try {
-    const response = await api.post("/rewards/admin", payload);
+    const formData = new FormData();
+    formData.append("Name", payload.name);
+    if (payload.description?.trim()) {
+      formData.append("Description", payload.description.trim());
+    }
+    if (payload.imageFile) {
+      formData.append("ImageFile", payload.imageFile);
+    }
+    formData.append("PointCost", String(payload.pointCost));
+    formData.append("Stock", String(payload.stock));
+
+    const response = await api.post("/rewards/admin", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
     return normalizeReward(unwrapEnvelope(response.data));
   } catch (error) {
     throw toRewardApiError(error);

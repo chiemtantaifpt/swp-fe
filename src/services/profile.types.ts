@@ -31,8 +31,10 @@ export interface EnterpriseDocument {
   recyclingEnterpriseId: string;
   documentType: string;
   originalFileName: string;
-  storedFileName: string;
-  fileUrl: string;
+  storedFileName?: string;
+  fileUrl?: string;
+  imageUrl?: string;
+  publicId?: string;
   contentType: string;
   fileSize: number;
   uploadedAt: string;
